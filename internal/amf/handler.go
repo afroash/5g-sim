@@ -22,6 +22,7 @@ import (
 	"github.com/free5gc/ngap/ngapType"
 
 	ngapbuilder "github.com/afroash/5g-sim/internal/ngap"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
 // HandleNGSetupRequest processes an NGSetupRequest from a gNB.
@@ -38,6 +39,10 @@ import (
 // Ref: TS 38.401 §8.7 — NG Setup procedure description
 func (a *AMF) HandleNGSetupRequest(conn net.Conn, pdu *ngapType.NGAPPDU) {
 	fmt.Printf("[AMF] Received NGSetupRequest from %s\n", conn.RemoteAddr())
+	if a.Hub != nil {
+		a.Hub.Separator("NG Setup [TS 38.413 §8.7.1]")
+		a.Hub.Procedure(seqdiag.NodeGNB, seqdiag.NodeAMF, "NGSetupRequest", "TS 38.413 §9.2.6.1")
+	}
 
 	// Unpack the InitiatingMessage value — we know it's an NGSetupRequest
 	// because the dispatcher only calls us for ProcedureCodeNGSetup + InitiatingMessage.
@@ -161,13 +166,16 @@ func (a *AMF) HandleNGSetupRequest(conn net.Conn, pdu *ngapType.NGAPPDU) {
 		return
 	}
 
-	if _, err := conn.Write(data); err != nil {
+	if err := a.sendNGAP(conn, data); err != nil {
 		fmt.Printf("[AMF] Failed to send NGSetupResponse: %v\n", err)
 		a.RemoveRAN(conn)
 		return
 	}
 
 	fmt.Printf("[AMF] NGSetupResponse sent to %s ✓\n", ran)
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeAMF, seqdiag.NodeGNB, "NGSetupResponse", "TS 38.413 §9.2.6.2")
+	}
 }
 
 // sendSetupFailure is a helper that builds and sends an NGSetupFailure.
@@ -180,7 +188,7 @@ func (a *AMF) sendSetupFailure(conn net.Conn, causePresent int, causeValue aper.
 		fmt.Printf("[AMF] Failed to build NGSetupFailure: %v\n", err)
 		return
 	}
-	if _, err := conn.Write(data); err != nil {
+	if err := a.sendNGAP(conn, data); err != nil {
 		fmt.Printf("[AMF] Failed to send NGSetupFailure: %v\n", err)
 	}
 }

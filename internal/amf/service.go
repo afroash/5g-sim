@@ -14,6 +14,7 @@ import (
 
 	ngapdispatcher "github.com/afroash/5g-sim/internal/ngap"
 	sctpserver "github.com/afroash/5g-sim/internal/sctp"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 	"github.com/free5gc/ngap/ngapType"
 )
 
@@ -36,11 +37,19 @@ func (a *AMF) Start() error {
 
 	// The SCTP server's Handler is the dispatcher's Dispatch method.
 	// Every raw NGAP message received from any gNB flows through here.
+	// We intercept the raw bytes for PCAP capture before dispatching.
 	srv := sctpserver.NewServer(a.config.SCTPPort, func(conn net.Conn, addr net.Addr, data []byte) {
+		// Capture inbound NGAP (gNB → AMF)
+		if a.Hub != nil {
+			a.Hub.NGAP("gNB", "AMF", data)
+		}
 		d.Dispatch(conn, addr, data)
 	})
 
 	fmt.Printf("[AMF] Listening for gNB connections on SCTP port %d\n", a.config.SCTPPort)
+	if a.Hub != nil {
+		a.Hub.Note("5g-sim AMF started", seqdiag.NodeAMF)
+	}
 	return srv.Listen()
 }
 
@@ -77,4 +86,14 @@ func (a *AMF) registerHandlers(d *ngapdispatcher.Dispatcher) {
 	fmt.Println("[AMF]   ProcedureCodeNGSetup (InitiatingMessage)          → HandleNGSetupRequest")
 	fmt.Println("[AMF]   ProcedureCodeInitialUEMessage (InitiatingMessage) → HandleInitialUEMessage")
 	fmt.Println("[AMF]   ProcedureCodeUplinkNASTransport (InitiatingMessage) → HandleUplinkNASTransport")
+}
+
+// sendNGAP writes a raw NGAP PDU to the given connection and captures
+// it in the PCAP file if observability is enabled.
+func (a *AMF) sendNGAP(conn net.Conn, data []byte) error {
+	if a.Hub != nil {
+		a.Hub.NGAP("AMF", "gNB", data)
+	}
+	_, err := conn.Write(data)
+	return err
 }

@@ -16,6 +16,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/afroash/5g-sim/pkg/obs"
 )
 
 // Config holds the AMF's startup configuration.
@@ -83,6 +85,7 @@ func (r *RAN) String() string {
 // It holds all connected gNBs and registered UE contexts.
 type AMF struct {
 	config Config
+	Hub    *obs.Hub
 
 	// mu protects the maps below — multiple gNBs connect concurrently.
 	mu sync.RWMutex

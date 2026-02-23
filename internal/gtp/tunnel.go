@@ -16,13 +16,16 @@ import (
 	"sync"
 )
 
+// CaptureFunc is an optional callback for packet capture.
+// If set, called with raw GTP-U bytes on every send/receive.
+type CaptureFunc func(direction string, data []byte)
+
 // HandlerFunc is called when a G-PDU arrives on a registered TEID.
 // teid is the TEID from the packet header.
 // src is the remote UDP address the packet came from.
 // innerPkt is the decapsulated inner IP packet.
 type HandlerFunc func(teid uint32, src *net.UDPAddr, innerPkt []byte)
 
-// EchoHandlerFunc is called for Echo Requests.
 type EchoHandlerFunc func(src *net.UDPAddr, seqNum uint16)
 
 // Tunnel is a GTP-U UDP endpoint.
@@ -33,6 +36,7 @@ type Tunnel struct {
 	handlers map[uint32]HandlerFunc // TEID → handler
 	echo     EchoHandlerFunc
 	nextTEID uint32
+	Capture  CaptureFunc // optional — set by obs hub
 }
 
 // NewTunnel creates and binds a GTP-U UDP socket on the given port.
@@ -109,7 +113,9 @@ func (t *Tunnel) SendGPDU(remote *net.UDPAddr, teid uint32, innerPkt []byte) err
 	if err != nil {
 		return fmt.Errorf("send GTP-U to %s: %w", remote, err)
 	}
-
+	if t.Capture != nil {
+		t.Capture("tx", data)
+	}
 	return nil
 }
 
@@ -140,6 +146,9 @@ func (t *Tunnel) Serve() {
 		data := make([]byte, n)
 		copy(data, buf[:n])
 
+		if t.Capture != nil {
+			t.Capture("rx", data)
+		}
 		go t.dispatch(src, data)
 	}
 }

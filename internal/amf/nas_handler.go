@@ -21,6 +21,7 @@ import (
 
 	"github.com/afroash/5g-sim/internal/nas"
 	ngapbuilder "github.com/afroash/5g-sim/internal/ngap"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
 // HandleInitialUEMessage processes the first NGAP message from a UE.
@@ -181,6 +182,10 @@ func (a *AMF) routeNASMessage(conn net.Conn, ran *RAN, ranUeNgapID int64, nasPay
 // Ref: TS 23.502 §4.2.2.2
 func (a *AMF) handleRegistrationRequest(conn net.Conn, ran *RAN, ranUeNgapID int64, msg *nas.Message) {
 	fmt.Println("[AMF]   Processing Registration Request")
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
+			"InitialUEMessage (Registration Request)", "TS 38.413 §9.2.5.1")
+	}
 
 	req, err := nas.DecodeRegistrationRequest(msg.Payload)
 	if err != nil {
@@ -299,7 +304,7 @@ func (a *AMF) sendDownlinkNASTransport(conn net.Conn, amfUeNgapID, ranUeNgapID i
 		return fmt.Errorf("encode DownlinkNASTransport: %w", err)
 	}
 
-	if _, err := conn.Write(data); err != nil {
+	if err := a.sendNGAP(conn, data); err != nil {
 		return fmt.Errorf("send DownlinkNASTransport: %w", err)
 	}
 

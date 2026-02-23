@@ -16,6 +16,7 @@ import (
 
 	"github.com/afroash/5g-sim/internal/nas"
 	"github.com/afroash/5g-sim/internal/smf"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
 // SMFAddress is where the AMF will reach the SMF on N11.
@@ -31,6 +32,11 @@ const SMFAddress = "http://127.0.0.1:8001"
 // Ref: TS 23.502 §4.3.2.2.1
 func (a *AMF) HandlePDUSessionEstablishmentRequest(conn net.Conn, ue *UEContext, nasPayload []byte) {
 	fmt.Println("[AMF]   Processing PDU Session Establishment Request")
+	if a.Hub != nil {
+		a.Hub.Separator("PDU Session Establishment [TS 23.502 §4.3.2]")
+		a.Hub.Procedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
+			"UplinkNASTransport (PDU Session Estab Request)", "TS 38.413 §9.2.5.3")
+	}
 
 	req, err := nas.DecodePDUSessionEstablishmentRequest(nasPayload)
 	if err != nil {
@@ -62,6 +68,11 @@ func (a *AMF) HandlePDUSessionEstablishmentRequest(conn net.Conn, ue *UEContext,
 		},
 	}
 
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeAMF, seqdiag.NodeSMF,
+			"Nsmf_PDUSession_CreateSMContext", "TS 29.502 §5.2.2.2",
+			"supi", ue.SUPI, "dnn", dnn)
+	}
 	smCtxResp, err := smfClient.CreateSMContext(smCtxReq)
 	if err != nil {
 		fmt.Printf("[AMF]   SMF context creation failed: %v\n", err)
@@ -118,6 +129,14 @@ func (a *AMF) HandlePDUSessionEstablishmentRequest(conn net.Conn, ue *UEContext,
 
 	fmt.Printf("[AMF]   PDU Session established: UE=%s IP=%s ✓\n",
 		ue.SUPI, allocatedIP)
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeSMF, seqdiag.NodeAMF,
+			"201 Created (IP allocated)", "TS 29.502 §6.1.6.3.2",
+			"ip", allocatedIP)
+		a.Hub.Procedure(seqdiag.NodeAMF, seqdiag.NodeGNB,
+			"DownlinkNASTransport (PDU Session Estab Accept)", "TS 38.413 §9.2.5.2",
+			"ip", allocatedIP)
+	}
 }
 
 // sendPDUSessionNASToUE wraps a NAS SM message in a NAS MM UL NAS Transport
