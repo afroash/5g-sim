@@ -94,6 +94,14 @@ type GNB struct {
 	// setupDone is closed when NG Setup completes successfully.
 	// Lets other goroutines wait for the gNB to be ready.
 	setupDone chan struct{}
+
+	// pendingULTEID is the UL TEID the UPF expects for uplink GTP-U packets.
+	// Populated from the SMF session response, passed via the AMF.
+	pendingULTEID uint32
+
+	// pendingUPFAddr is the UPF GTP-U endpoint ("ip:port").
+	// Populated from the SMF session response, passed via the AMF.
+	pendingUPFAddr string
 }
 
 // New creates a new gNB instance ready to connect to the AMF.

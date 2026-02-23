@@ -94,6 +94,10 @@ type SmContextCreateResponse struct {
 	// N1SmMsg is the NAS SM response to send to the UE.
 	N1SmMsg string `json:"n1SmMsg,omitempty"`
 
+	// GTPTunnel holds the UPF GTP-U endpoint and UL TEID.
+	// The gNB uses this to send uplink user plane traffic.
+	GTPTunnel *GTPTunnel `json:"gtpTunnel,omitempty"`
+
 	// Cause indicates why the request failed (if applicable).
 	Cause string `json:"cause,omitempty"`
 }
@@ -139,6 +143,9 @@ type SmContext struct {
 
 	// AMFAddress is where to send N11 callbacks.
 	AMFAddress string
+
+	// GTPTunnel is the UPF-side tunnel endpoint for this session.
+	GTPTunnel *GTPTunnel
 
 	// CreatedAt is when this session was established.
 	CreatedAt time.Time

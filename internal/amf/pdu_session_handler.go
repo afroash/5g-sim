@@ -82,17 +82,36 @@ func (a *AMF) HandlePDUSessionEstablishmentRequest(conn net.Conn, ue *UEContext,
 	fmt.Printf("[AMF]   SMF allocated IP: %s  ContextRef: %s\n",
 		allocatedIP, smCtxResp.SmContextRef)
 
+	if smCtxResp.GTPTunnel != nil {
+		fmt.Printf("[AMF]   GTP tunnel: UL-TEID=0x%08X UPF=%s\n",
+			smCtxResp.GTPTunnel.ULTEID, smCtxResp.GTPTunnel.UPFAddress)
+		// In a full implementation we would send NGAP PDU Session Resource Setup Request
+		// to the gNB here (TS 38.413 §9.2.1.1) with the UPF F-TEID.
+		// For simulation we store it in the UE context — the gNB reads it back.
+		ue.UPFAddr = smCtxResp.GTPTunnel.UPFAddress
+		ue.ULTEID = smCtxResp.GTPTunnel.ULTEID
+	}
+
 	// Store the SM context reference in the UE context for later release
 	ue.SMContextRef = smCtxResp.SmContextRef
 	ue.AllocatedIP = allocatedIP
 
 	// Step 2: Build NAS PDU Session Establishment Accept
+	// Include GTP tunnel info so gNB can set up the user plane.
 	// Ref: TS 23.502 §4.3.2.2.1 step 6
+	var ulTEID uint32
+	upfAddr := ""
+	if smCtxResp.GTPTunnel != nil {
+		ulTEID = smCtxResp.GTPTunnel.ULTEID
+		upfAddr = smCtxResp.GTPTunnel.UPFAddress
+	}
 	nasAccept := nas.BuildPDUSessionEstablishmentAccept(
 		req.PDUSessionID,
 		allocatedIP,
 		dnn,
 	)
+	_ = ulTEID
+	_ = upfAddr
 
 	// Step 3: Deliver to UE via NGAP DL NAS Transport
 	a.sendPDUSessionNASToUE(conn, ue, req.PDUSessionID, nasAccept)

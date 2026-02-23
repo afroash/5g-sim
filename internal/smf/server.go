@@ -38,16 +38,21 @@ type Config struct {
 
 	// NRFAddress is the NRF's base URL for registration.
 	NRFAddress string
+
+	// UPFPFCPAddress is the UPF's PFCP-sim HTTP endpoint.
+	// Used to notify the UPF of new sessions.
+	UPFPFCPAddress string
 }
 
 // DefaultConfig returns sensible defaults for local development.
 func DefaultConfig() Config {
 	return Config{
-		InstanceID: "smf-sim-001",
-		Port:       8001,
-		PLMN:       "00101",
-		IPPoolCIDR: "10.0.0.0/24",
-		NRFAddress: "http://127.0.0.1:8000",
+		InstanceID:     "smf-sim-001",
+		Port:           8001,
+		PLMN:           "00101",
+		IPPoolCIDR:     "10.0.0.0/24",
+		NRFAddress:     "http://127.0.0.1:8000",
+		UPFPFCPAddress: "http://127.0.0.1:8002",
 	}
 }
 
@@ -168,7 +173,17 @@ func (s *SMF) createSMContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Allocate a UL TEID for this session — gNB will use this when sending
+	// uplink GTP-U packets to the UPF.
+	// Ref: TS 29.281 §5.1 / TS 23.502 §4.3.2.2.1
+	ulTEID := AllocateTEID()
+	upfAddr := fmt.Sprintf("127.0.0.1:%d", 2152) // UPF GTP-U endpoint
+
 	// Create and store the session context
+	gtpTunnel := &GTPTunnel{
+		UPFAddress: upfAddr,
+		ULTEID:     ulTEID,
+	}
 	ctx := &SmContext{
 		SUPI:           req.Supi,
 		PDUSessionID:   req.PDUSessionID,
@@ -177,11 +192,14 @@ func (s *SMF) createSMContext(w http.ResponseWriter, r *http.Request) {
 		PDUSessionType: req.PDUSessionType,
 		AllocatedIP:    ip,
 		Status:         PDUSessionStatusActive,
+		GTPTunnel:      gtpTunnel,
 		CreatedAt:      time.Now(),
 	}
 	ctxID := s.sessions.Add(ctx)
 
-	// Build the response with the context reference and allocated IP
+	fmt.Printf("[SMF] GTP tunnel: UL-TEID=0x%08X UPF=%s\n", ulTEID, upfAddr)
+
+	// Build the response with the context reference, allocated IP, and GTP tunnel
 	smfBase := fmt.Sprintf("http://127.0.0.1:%d", s.config.Port)
 	resp := SmContextCreateResponse{
 		SmContextRef: fmt.Sprintf("%s/nsmf-pdusession/v1/sm-contexts/%s", smfBase, ctxID),
@@ -189,9 +207,25 @@ func (s *SMF) createSMContext(w http.ResponseWriter, r *http.Request) {
 			PduSessionType: PDUSessionTypeIPv4,
 			Ipv4Addr:       ip,
 		},
+		GTPTunnel: gtpTunnel,
 	}
 
-	fmt.Printf("[SMF] Session created: id=%s ip=%s ✓\n", ctxID, ip)
+	fmt.Printf("[SMF] Session created: id=%s ip=%s UL-TEID=0x%08X ✓\n",
+		ctxID, ip, ulTEID)
+
+	// Notify UPF via PFCP-sim so it registers the TEID handler.
+	// Ref: TS 29.244 §5.2 — PFCP Session Establishment
+	pfcp := NewPFCPClient(s.config.UPFPFCPAddress)
+	pfcpReq := PFCPSessionRequest{
+		ULTEID:      ulTEID,
+		DLTEID:      0,  // gNB DL TEID not known yet — set on N2 setup
+		GNBAddress:  "", // gNB GTP-U addr not known yet — set when gNB connects
+		UEIPAddress: ip,
+	}
+	if err := pfcp.EstablishSession(pfcpReq); err != nil {
+		// Non-fatal: UPF may not be running, packets will be dropped but session proceeds
+		fmt.Printf("[SMF] PFCP notify failed (UPF may not be running): %v\n", err)
+	}
 
 	// 201 Created — new resource
 	// Ref: TS 29.502 §6.1.6.3.2

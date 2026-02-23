@@ -57,6 +57,12 @@ type UEContext struct {
 	// AllocatedIP is the IP address assigned by the SMF.
 	AllocatedIP string
 
+	// UPFAddr is the UPF GTP-U endpoint ("ip:port") for this session.
+	UPFAddr string
+
+	// ULTEID is the TEID the gNB should use for uplink GTP-U packets.
+	ULTEID uint32
+
 	// RegisteredAt is when this UE completed registration.
 	RegisteredAt time.Time
 }

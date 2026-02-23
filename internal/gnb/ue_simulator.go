@@ -19,6 +19,7 @@ package gnb
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/free5gc/ngap/ngapType"
 
@@ -356,25 +357,19 @@ func buildULNASTransportMM(pduSessionID uint8, smPayload []byte) []byte {
 	return msg
 }
 
-// HandleDownlinkNASTransportPDUSession handles a DL NAS Transport carrying
-// a PDU Session Establishment Accept/Reject.
-// Called from HandleDownlinkNASTransport when the SM message type is detected.
+// handlePDUSessionAccept processes a DL NAS Transport carrying a PDU Session Accept.
+// Extracts the UE IP and sets up the GTP-U user plane tunnel.
 func (g *GNB) handlePDUSessionAccept(nasPayload []byte) {
-	if len(nasPayload) < 5 {
-		fmt.Println("[gNB]   PDU Session Accept payload too short")
+	if len(nasPayload) < 6 {
+		fmt.Println("[gNB]   DL NAS Transport payload too short")
 		return
 	}
 
-	// Skip MM header (3 bytes) + container type (1) + length (2)
-	if len(nasPayload) < 6 {
-		return
-	}
 	containerLen := int(nasPayload[4])<<8 | int(nasPayload[5])
 	if 6+containerLen > len(nasPayload) {
 		return
 	}
 	smPayload := nasPayload[6 : 6+containerLen]
-
 	if len(smPayload) < 4 {
 		return
 	}
@@ -384,9 +379,7 @@ func (g *GNB) handlePDUSessionAccept(nasPayload []byte) {
 	switch smMsgType {
 	case nas.MsgTypePDUSessionEstablishmentAccept:
 		fmt.Println("[gNB]   NAS PDU Session Establishment Accept received ✓")
-		// Parse the IP address from the SM payload (simplified)
-		// Full decode would use DecodePDUSessionEstablishmentAccept
-		fmt.Printf("[gNB]   UE now has a data session (SM payload %d bytes)\n", len(smPayload))
+		g.setupUserPlaneFromAccept(smPayload)
 
 	case nas.MsgTypePDUSessionEstablishmentReject:
 		fmt.Println("[gNB]   NAS PDU Session Establishment Reject received ✗")
@@ -394,4 +387,85 @@ func (g *GNB) handlePDUSessionAccept(nasPayload []byte) {
 			fmt.Printf("[gNB]   Reject cause: 0x%02X\n", smPayload[4])
 		}
 	}
+}
+
+// setupUserPlaneFromAccept parses the PDU Session Accept and sets up GTP-U.
+func (g *GNB) setupUserPlaneFromAccept(smPayload []byte) {
+	// Parse UE IP from PDU address IE (IEI=0x29)
+	ueIP := ""
+	upfAddr := "127.0.0.1:2152"
+	var ulTEID uint32 = 1 // Default — real value comes from AMF via N2
+
+	offset := 5 // skip: EPD(1) + PDUSessionID(1) + PTI(1) + MsgType(1) + SessionType(1)
+
+	// Skip mandatory QoS Rules (length-prefixed, 2-byte length)
+	if offset+2 <= len(smPayload) {
+		qosLen := int(smPayload[offset])<<8 | int(smPayload[offset+1])
+		offset += 2 + qosLen
+	}
+	// Skip Session AMBR (length-prefixed, 1-byte length)
+	if offset+1 <= len(smPayload) {
+		ambrLen := int(smPayload[offset])
+		offset += 1 + ambrLen
+	}
+
+	// Parse optional IEs
+	for offset < len(smPayload)-1 {
+		iei := smPayload[offset]
+		offset++
+		if offset >= len(smPayload) {
+			break
+		}
+		ieLen := int(smPayload[offset])
+		offset++
+		if offset+ieLen > len(smPayload) {
+			break
+		}
+		ieData := smPayload[offset : offset+ieLen]
+		offset += ieLen
+
+		switch iei {
+		case 0x29: // PDU Address
+			if len(ieData) >= 5 && ieData[0] == 0x01 { // IPv4
+				ueIP = fmt.Sprintf("%d.%d.%d.%d",
+					ieData[1], ieData[2], ieData[3], ieData[4])
+				fmt.Printf("[gNB]   UE allocated IP: %s\n", ueIP)
+			}
+		case 0x25: // DNN
+			if len(ieData) > 1 {
+				fmt.Printf("[gNB]   DNN: %s\n", string(ieData[1:]))
+			}
+		}
+	}
+
+	if ueIP == "" {
+		fmt.Println("[gNB]   Could not parse UE IP from PDU Session Accept")
+		ueIP = "10.0.0.1" // fallback for simulation
+	}
+
+	// g.pendingULTEID is set by the AMF N2 session resource setup
+	// For now use the default value (1) — in Phase 6 this comes via NGAP
+	// PDU Session Resource Setup Request (TS 38.413 §9.2.1.1)
+	g.mu.RLock()
+	if g.pendingULTEID != 0 {
+		ulTEID = g.pendingULTEID
+	}
+	if g.pendingUPFAddr != "" {
+		upfAddr = g.pendingUPFAddr
+	}
+	g.mu.RUnlock()
+
+	up, err := g.SetupUserPlane(ueIP, ulTEID, upfAddr)
+	if err != nil {
+		fmt.Printf("[gNB]   Failed to setup user plane: %v\n", err)
+		return
+	}
+
+	// Send a simulated ping to prove the user plane works
+	time.Sleep(100 * time.Millisecond) // let UPF register session
+	fmt.Println("[gNB]   Sending simulated ICMP ping through GTP tunnel...")
+	if err := up.SendPing("8.8.8.8"); err != nil {
+		fmt.Printf("[gNB]   Ping failed: %v\n", err)
+	}
+	up.WaitForReply(500 * time.Millisecond)
 }
