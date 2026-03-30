@@ -70,6 +70,12 @@ func (g *GNB) SetupUserPlane(ueIP string, ulTEID uint32, upfAddrStr string) (*Us
 	// Allocate a DL TEID — we tell the UPF to use this for downlink packets
 	dlTEID := tunnel.AllocateTEID()
 
+	// Attach capture hook if hub is configured
+	if g.Hub != nil {
+		tunnel.Capture = g.Hub.MakeCaptureFunc("gNB", "UPF")
+		fmt.Println("[gNB] GTP-U packet capture enabled")
+	}
+
 	// Register handler for downlink packets from UPF
 	tunnel.RegisterTEID(dlTEID, func(teid uint32, src *net.UDPAddr, innerPkt []byte) {
 		g.handleDownlinkPacket(teid, src, innerPkt)

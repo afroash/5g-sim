@@ -111,6 +111,22 @@ func (h *Hub) GTPU(from, to string, payload []byte) {
 	}
 }
 
+// MakeCaptureFunc returns a gtp.CaptureFunc that writes packets to the GTP-U pcap.
+// Attach this to a gtp.Tunnel after creation:
+//
+//	tunnel.Capture = hub.MakeCaptureFunc("gNB", "UPF")
+func (h *Hub) MakeCaptureFunc(from, to string) func(direction string, data []byte) {
+	return func(direction string, data []byte) {
+		// Build a UDP/IP frame so Wireshark can dissect it
+		src := net.ParseIP("127.0.0.1")
+		dst := net.ParseIP("127.0.0.1")
+		frame := pcap.BuildUDPFrame(src, dst, 2152, 2152, data)
+		if err := h.gtpPCAP.WritePacket(frame); err != nil {
+			fmt.Printf("[obs] GTP-U pcap write error: %v\n", err)
+		}
+	}
+}
+
 // --- Procedure events (sequence diagram + log) ---
 
 // Procedure records a 5G procedure event for the sequence diagram and log.

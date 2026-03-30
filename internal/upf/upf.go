@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/afroash/5g-sim/internal/gtp"
+	"github.com/afroash/5g-sim/pkg/obs"
 )
 
 // Config holds the UPF startup configuration.
@@ -32,6 +33,9 @@ type Config struct {
 
 	// BindAddr is the IP address to bind to (default: 0.0.0.0).
 	BindAddr string
+
+	// Hub is the optional observability hub for packet capture.
+	Hub *obs.Hub
 }
 
 // DefaultConfig returns sensible defaults.
@@ -67,11 +71,19 @@ func New(cfg Config) (*UPF, error) {
 		return nil, fmt.Errorf("create GTP-U tunnel: %w", err)
 	}
 
-	return &UPF{
+	u := &UPF{
 		config:   cfg,
 		tunnel:   tunnel,
 		sessions: make(map[uint32]*UPFSession),
-	}, nil
+	}
+
+	// Attach capture hook if hub is configured
+	if cfg.Hub != nil {
+		tunnel.Capture = cfg.Hub.MakeCaptureFunc("UPF", "gNB")
+		fmt.Println("[UPF] GTP-U packet capture enabled")
+	}
+
+	return u, nil
 }
 
 // RegisterSession tells the UPF about a new UE session.

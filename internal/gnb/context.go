@@ -14,6 +14,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/afroash/5g-sim/pkg/obs"
 )
 
 // Config holds the gNB's startup configuration.
@@ -34,6 +36,9 @@ type Config struct {
 
 	// AMFAddress is the IP/hostname of the AMF to connect to.
 	AMFAddress string
+
+	// Hub is the optional observability hub for packet capture.
+	Hub *obs.Hub
 
 	// AMFPort is the SCTP port of the AMF. Default: 38412.
 	AMFPort int
@@ -102,6 +107,9 @@ type GNB struct {
 	// pendingUPFAddr is the UPF GTP-U endpoint ("ip:port").
 	// Populated from the SMF session response, passed via the AMF.
 	pendingUPFAddr string
+
+	// Hub is the observability hub (nil if not configured).
+	Hub *obs.Hub
 }
 
 // New creates a new gNB instance ready to connect to the AMF.
@@ -109,6 +117,7 @@ func New(cfg Config) *GNB {
 	return &GNB{
 		config:    cfg,
 		setupDone: make(chan struct{}),
+		Hub:       cfg.Hub,
 	}
 }
 

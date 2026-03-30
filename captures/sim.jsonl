@@ -1,7 +1,7 @@
-{"ts":"2026-02-23T23:09:47.037783132Z","component":"gNB","level":"INFO ","msg":"→ AMF: NGSetupRequest","specRef":"TS 38.413 §9.2.6.1"}
-{"ts":"2026-02-23T23:09:47.038151975Z","component":"AMF","level":"INFO ","msg":"→ gNB: NGSetupResponse","specRef":"TS 38.413 §9.2.6.2"}
-{"ts":"2026-02-23T23:09:47.038700873Z","component":"gNB","level":"INFO ","msg":"→ AMF: InitialUEMessage (Registration Request)","specRef":"TS 38.413 §9.2.5.1"}
-{"ts":"2026-02-23T23:09:47.242043802Z","component":"gNB","level":"INFO ","msg":"→ AMF: UplinkNASTransport (PDU Session Estab Request)","specRef":"TS 38.413 §9.2.5.3"}
-{"ts":"2026-02-23T23:09:47.24216566Z","component":"AMF","level":"INFO ","msg":"→ SMF: Nsmf_PDUSession_CreateSMContext","specRef":"TS 29.502 §5.2.2.2","fields":{"dnn":"internet","supi":"imsi-sim-1"}}
-{"ts":"2026-02-23T23:09:47.246533079Z","component":"SMF","level":"INFO ","msg":"→ AMF: 201 Created (IP allocated)","specRef":"TS 29.502 §6.1.6.3.2","fields":{"ip":"10.0.0.2"}}
-{"ts":"2026-02-23T23:09:47.24666198Z","component":"AMF","level":"INFO ","msg":"→ gNB: DownlinkNASTransport (PDU Session Estab Accept)","specRef":"TS 38.413 §9.2.5.2","fields":{"ip":"10.0.0.2"}}
+{"ts":"2026-02-24T12:28:36.423318163Z","component":"gNB","level":"INFO ","msg":"→ AMF: NGSetupRequest","specRef":"TS 38.413 §9.2.6.1"}
+{"ts":"2026-02-24T12:28:36.423780449Z","component":"AMF","level":"INFO ","msg":"→ gNB: NGSetupResponse","specRef":"TS 38.413 §9.2.6.2"}
+{"ts":"2026-02-24T12:28:36.424550319Z","component":"gNB","level":"INFO ","msg":"→ AMF: InitialUEMessage (Registration Request)","specRef":"TS 38.413 §9.2.5.1"}
+{"ts":"2026-02-24T12:28:36.629897294Z","component":"gNB","level":"INFO ","msg":"→ AMF: UplinkNASTransport (PDU Session Estab Request)","specRef":"TS 38.413 §9.2.5.3"}
+{"ts":"2026-02-24T12:28:36.630018266Z","component":"AMF","level":"INFO ","msg":"→ SMF: Nsmf_PDUSession_CreateSMContext","specRef":"TS 29.502 §5.2.2.2","fields":{"dnn":"internet","supi":"imsi-sim-1"}}
+{"ts":"2026-02-24T12:28:36.633179422Z","component":"SMF","level":"INFO ","msg":"→ AMF: 201 Created (IP allocated)","specRef":"TS 29.502 §6.1.6.3.2","fields":{"ip":"10.0.0.1"}}
+{"ts":"2026-02-24T12:28:36.633265024Z","component":"AMF","level":"INFO ","msg":"→ gNB: DownlinkNASTransport (PDU Session Estab Accept)","specRef":"TS 38.413 §9.2.5.2","fields":{"ip":"10.0.0.1"}}
