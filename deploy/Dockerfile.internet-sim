@@ -1,0 +1,44 @@
+# ============================================================
+# Internet Simulator
+# Alpine + FRR (OSPF) + nginx (HTTP target)
+#
+# Role in topology:
+#   - Connects to spine1 via eth1 (10.0.0.0/30)
+#   - Runs OSPF, injects a default route into the fabric
+#   - nginx serves HTTP on 10.100.0.1 — the UE curl target
+#
+# Build context: deploy/ root
+#   docker build -t 5gsim/internet-sim:latest -f servers/Dockerfile.internet-sim .
+# ============================================================
+FROM alpine:3.19
+
+RUN apk add --no-cache \
+    frr \
+    nginx \
+    iproute2 \
+    iputils \
+    curl \
+    bash
+
+# ------------------------------------------------------------
+# FRR
+# ------------------------------------------------------------
+COPY configs/internet-sim/frr.conf /etc/frr/frr.conf
+COPY configs/internet-sim/daemons  /etc/frr/daemons
+RUN chown -R frr:frr /etc/frr/
+
+# ------------------------------------------------------------
+# nginx
+# ------------------------------------------------------------
+RUN mkdir -p /var/www/html /run/nginx
+
+COPY configs/internet-sim/index.html   /var/www/html/index.html
+COPY configs/internet-sim/default.conf /etc/nginx/http.d/default.conf
+
+# ------------------------------------------------------------
+# Entrypoint
+# ------------------------------------------------------------
+COPY configs/internet-sim/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,40 @@
+! ============================================================
+! Spine1 — Partial Startup Configuration
+! Role: WAN aggregation, connects leaf layer to internet-sim
+! OSPF Area 0 (backbone)
+!
+! NOTE: Interface IPs are assigned by ContainerLab via the ipv4
+! field in the topology links section. Only OSPF config here.
+! ============================================================
+
+hostname spine1
+
+! --- Loopback (Router ID) ---
+interface Loopback0
+ ip address 10.255.0.1 255.255.255.255
+ no shutdown
+
+! --- OSPF on CL-assigned interfaces ---
+interface Ethernet0/1
+ description TO_INTERNET_SIM
+ ip ospf mtu-ignore
+ ip ospf 1 area 0
+
+interface Ethernet0/2
+ description TO_LEAF1
+ ip ospf network point-to-point
+ ip ospf 1 area 0
+
+interface Ethernet0/3
+ description TO_LEAF2
+ ip ospf network point-to-point
+ ip ospf 1 area 0
+
+! --- OSPF Process ---
+router ospf 1
+ router-id 10.255.0.1
+ passive-interface default
+ no passive-interface Ethernet0/1
+ no passive-interface Ethernet0/2
+ no passive-interface Ethernet0/3
+ network 10.255.0.1 0.0.0.0 area 0

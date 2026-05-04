@@ -1,0 +1,98 @@
+name: 5g-sim
+prefix: ""
+
+topology:
+  kinds:
+    cisco_iol:
+      image: vrnetlab/cisco_iol:17.12.01
+
+  # ============================================================
+  # Nodes
+  # ============================================================
+  nodes:
+    # ----------------------------------------------------------
+    # Spine Layer
+    # ----------------------------------------------------------
+    spine1:
+      kind: cisco_iol
+      startup-config: configs/spine1/ospf.partial
+
+    # ----------------------------------------------------------
+    # Leaf Layer
+    # ----------------------------------------------------------
+    leaf1:
+      kind: cisco_iol
+      startup-config: configs/leaf1/ospf.partial
+
+    leaf2:
+      kind: cisco_iol
+      startup-config: configs/leaf2/ospf.partial
+
+    # ----------------------------------------------------------
+    # Internet Simulator
+    # Alpine + FRR (routing) + nginx (HTTP target)
+    # Sits upstream of spine1 — simulates the internet
+    # ----------------------------------------------------------
+    internet-sim:
+      kind: linux
+      image: 5gsim/internet-sim:latest
+
+    # ----------------------------------------------------------
+    # Server A — Control Plane
+    # Hosts: NRF, AMF, SMF
+    # Dual-homed to leaf1 and leaf2
+    # ----------------------------------------------------------
+    server-a:
+      kind: linux
+      image: 5gsim/server-cp:latest
+
+    # ----------------------------------------------------------
+    # Server B — User Plane
+    # Hosts: UPF, gNB
+    # Dual-homed to leaf1 and leaf2
+    # ----------------------------------------------------------
+    server-b:
+      kind: linux
+      image: 5gsim/server-up:latest
+
+  # ============================================================
+  # Links
+  # Point-to-point /30 subnets on every fabric link.
+  # Ethernet0/0 on IOL nodes is the management VRF — skip it.
+  # All data-plane links start at Ethernet0/1.
+  # ============================================================
+  links:
+    # --- Internet Sim <-> Spine1 ---
+    # Subnet: 10.0.0.0/30
+    - endpoints: ["internet-sim:eth1", "spine1:Ethernet0/1"]
+      ipv4: ["10.0.0.1/30", "10.0.0.2/30"]
+
+    # --- Spine1 <-> Leaf1 ---
+    # Subnet: 10.0.1.0/30
+    - endpoints: ["spine1:Ethernet0/2", "leaf1:Ethernet0/1"]
+      ipv4: ["10.0.1.1/30", "10.0.1.2/30"]
+
+    # --- Spine1 <-> Leaf2 ---
+    # Subnet: 10.0.1.4/30
+    - endpoints: ["spine1:Ethernet0/3", "leaf2:Ethernet0/1"]
+      ipv4: ["10.0.1.5/30", "10.0.1.6/30"]
+
+    # --- Leaf1 <-> Server A (eth1) ---
+    # Subnet: 10.0.2.0/30
+    - endpoints: ["leaf1:Ethernet0/2", "server-a:eth1"]
+      ipv4: ["10.0.2.1/30", "10.0.2.2/30"]
+
+    # --- Leaf2 <-> Server A (eth2) ---
+    # Subnet: 10.0.2.4/30
+    - endpoints: ["leaf2:Ethernet0/2", "server-a:eth2"]
+      ipv4: ["10.0.2.5/30", "10.0.2.6/30"]
+
+    # --- Leaf1 <-> Server B (eth1) ---
+    # Subnet: 10.0.2.8/30
+    - endpoints: ["leaf1:Ethernet0/3", "server-b:eth1"]
+      ipv4: ["10.0.2.9/30", "10.0.2.10/30"]
+
+    # --- Leaf2 <-> Server B (eth2) ---
+    # Subnet: 10.0.2.12/30
+    - endpoints: ["leaf2:Ethernet0/3", "server-b:eth2"]
+      ipv4: ["10.0.2.13/30", "10.0.2.14/30"]

@@ -1,0 +1,40 @@
+# ============================================================
+# Server A — Control Plane Server
+# Phase 1: Ubuntu + FRR for OSPF dual-homed routing.
+# Phase 2: Will add NRF, AMF, SMF Go binaries.
+#
+# Build context: deploy/ root
+#   docker build -t 5gsim/server-cp:latest -f servers/Dockerfile.server-a .
+# ============================================================
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    frr \
+    iproute2 \
+    iputils-ping \
+    curl \
+    tcpdump \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Enable required FRR daemons
+RUN sed -i 's/^zebra=no/zebra=yes/' /etc/frr/daemons && \
+    sed -i 's/^ospfd=no/ospfd=yes/' /etc/frr/daemons && \
+    sed -i 's/^staticd=no/staticd=yes/' /etc/frr/daemons
+
+# FRR config — OSPF dual-homed, advertises loopback 10.1.0.1/32
+COPY configs/server-a/frr.conf /etc/frr/frr.conf
+RUN chown frr:frr /etc/frr/frr.conf
+
+# Entrypoint — network setup + FRR start + Phase 2 NF hooks
+COPY servers/entrypoint-server-a.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Phase 2: bake in compiled Go binaries
+# COPY bin/nrf /usr/local/bin/nrf
+# COPY bin/amf /usr/local/bin/amf
+# COPY bin/smf /usr/local/bin/smf
+
+ENTRYPOINT ["/entrypoint.sh"]

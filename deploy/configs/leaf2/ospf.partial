@@ -1,0 +1,40 @@
+! ============================================================
+! Leaf2 — Partial Startup Configuration
+! Role: ToR for Server A (eth2) and Server B (eth2)
+! OSPF Area 0 (backbone)
+!
+! NOTE: Interface IPs are assigned by ContainerLab via the ipv4
+! field in the topology links section. Only OSPF config here.
+! ============================================================
+
+hostname leaf2
+
+! --- Loopback (Router ID) ---
+interface Loopback0
+ ip address 10.255.0.3 255.255.255.255
+ no shutdown
+
+! --- OSPF on CL-assigned interfaces ---
+interface Ethernet0/1
+ description TO_SPINE1
+ ip ospf network point-to-point
+ ip ospf 1 area 0
+
+interface Ethernet0/2
+ description TO_SERVER_A_ETH2
+ ip ospf mtu-ignore
+ ip ospf 1 area 0
+
+interface Ethernet0/3
+ description TO_SERVER_B_ETH2
+ ip ospf mtu-ignore
+ ip ospf 1 area 0
+
+! --- OSPF Process ---
+router ospf 1
+ router-id 10.255.0.3
+ passive-interface default
+ no passive-interface Ethernet0/1
+ no passive-interface Ethernet0/2
+ no passive-interface Ethernet0/3
+ network 10.255.0.3 0.0.0.0 area 0

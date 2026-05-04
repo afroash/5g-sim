@@ -1,0 +1,41 @@
+# ============================================================
+# Server B — User Plane Server
+# Phase 1: Ubuntu + FRR for OSPF dual-homed routing.
+# Phase 2: Will add UPF, gNB Go binaries.
+#
+# Build context: deploy/ root
+#   docker build -t 5gsim/server-up:latest -f servers/Dockerfile.server-b .
+# ============================================================
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    frr \
+    iproute2 \
+    iputils-ping \
+    curl \
+    tcpdump \
+    net-tools \
+    iperf3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Enable required FRR daemons
+RUN sed -i 's/^zebra=no/zebra=yes/' /etc/frr/daemons && \
+    sed -i 's/^ospfd=no/ospfd=yes/' /etc/frr/daemons && \
+    sed -i 's/^staticd=no/staticd=yes/' /etc/frr/daemons
+
+# FRR config — OSPF dual-homed, advertises loopback 10.1.1.1/32
+# and UE pool 10.45.0.0/24 for return traffic routing
+COPY configs/server-b/frr.conf /etc/frr/frr.conf
+RUN chown frr:frr /etc/frr/frr.conf
+
+# Entrypoint — network setup + FRR start + Phase 2 NF hooks
+COPY servers/entrypoint-server-b.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Phase 2: bake in compiled Go binaries
+# COPY bin/upf /usr/local/bin/upf
+# COPY bin/gnb /usr/local/bin/gnb
+
+ENTRYPOINT ["/entrypoint.sh"]
