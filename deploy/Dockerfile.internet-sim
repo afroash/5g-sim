@@ -35,6 +35,11 @@ RUN mkdir -p /var/www/html /run/nginx
 COPY configs/internet-sim/index.html   /var/www/html/index.html
 COPY configs/internet-sim/default.conf /etc/nginx/http.d/default.conf
 
+
+RUN chown -R nginx:nginx /var/www/html && \
+    chmod 755 /var/www/html && \
+    chmod 644 /var/www/html/index.html
+
 # ------------------------------------------------------------
 # Entrypoint
 # ------------------------------------------------------------
