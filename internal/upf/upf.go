@@ -29,20 +29,26 @@ import (
 // Config holds the UPF startup configuration.
 type Config struct {
 	// GTPPort is the UDP port for GTP-U (default: 2152).
-	GTPPort int
+	GTPPort int `yaml:"gtp_port"`
 
 	// BindAddr is the IP address to bind to (default: 0.0.0.0).
-	BindAddr string
+	BindAddr string `yaml:"bind_addr"`
+
+	// PFCPSimPort is the HTTP port for the PFCP simulation API.
+	// The SMF calls this to register UE sessions.
+	// Ref: TS 29.244 §5
+	PFCPSimPort int `yaml:"pfcp_sim_port"`
 
 	// Hub is the optional observability hub for packet capture.
-	Hub *obs.Hub
+	Hub *obs.Hub `yaml:"-"`
 }
 
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		GTPPort:  gtp.GTPUPort,
-		BindAddr: "0.0.0.0",
+		GTPPort:     gtp.GTPUPort,
+		BindAddr:    "0.0.0.0",
+		PFCPSimPort: 8002,
 	}
 }
 

@@ -31,7 +31,7 @@ ip link set eth2 up
 # 3. IP forwarding — required for GTP-U decap + N6 routing
 # ------------------------------------------------------------
 echo "[server-b] Enabling IP forwarding..."
-sysctl -w net.ipv4.ip_forward=1 > /dev/null
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
 # ------------------------------------------------------------
 # 4. FRR — owns OSPF adjacency with both leaves
@@ -43,12 +43,12 @@ chown -R frr:frr /etc/frr/
 /usr/lib/frr/frrinit.sh start
 
 for i in $(seq 1 10); do
-    if vtysh -c "show version" > /dev/null 2>&1; then
-        echo "[server-b] FRR is up."
-        break
-    fi
-    echo "[server-b] Waiting for FRR... ($i/10)"
-    sleep 2
+  if vtysh -c "show version" >/dev/null 2>&1; then
+    echo "[server-b] FRR is up."
+    break
+  fi
+  echo "[server-b] Waiting for FRR... ($i/10)"
+  sleep 2
 done
 
 # ------------------------------------------------------------
@@ -74,6 +74,7 @@ vtysh -c "show ip ospf neighbor" 2>/dev/null || echo "FRR not ready yet"
 echo ""
 echo "--- Route Table ---"
 ip route show
+ip route delete default
 
 echo ""
 echo "[server-b] Phase 1 ready."
@@ -83,13 +84,37 @@ echo "[server-b] UE pool (10.45.0.0/24) advertised via OSPF."
 echo ""
 
 # ------------------------------------------------------------
-# Phase 2 placeholder: start NFs
-# Uncomment when binaries are baked in (Phase 2)
+# Phase 2: start NFs in dependency order with health checks
+# UPF before gNB — gNB's PDU sessions reach the UPF on N3.
+# gNB connects to AMF on Server A; retry loop handles timing.
 # ------------------------------------------------------------
-# echo "[server-b] Starting UPF..."
-# /usr/local/bin/upf &
-#
-# echo "[server-b] Starting gNB..."
-# /usr/local/bin/gnb &
 
-tail -f /var/log/frr/frr.log 2>/dev/null || tail -f /dev/null
+wait_http() {
+  local url=$1
+  echo "[server-b] Waiting for $url..."
+  for i in $(seq 1 30); do
+    if curl -sf "$url" >/dev/null 2>&1; then
+      echo "[server-b] Ready: $url"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "[server-b] WARNING: timeout waiting for $url — continuing"
+}
+
+echo "[server-b] Starting UPF..."
+/usr/local/bin/upf -config /etc/5g-sim/upf.yaml >/var/log/upf.log 2>&1 &
+wait_http http://10.1.1.1:8002/health
+
+echo "[server-b] Starting gNB..."
+/usr/local/bin/gnb -config /etc/5g-sim/gnb.yaml >/var/log/gnb.log 2>&1 &
+# gNB readiness is the SCTP association with AMF — its retry loop handles
+# the case where Server A is not yet ready.
+
+echo ""
+echo "[server-b] ========================================="
+echo "[server-b] Phase 2 complete — UPF and gNB running"
+echo "[server-b] ========================================="
+echo ""
+
+tail -f /var/log/upf.log /var/log/gnb.log 2>/dev/null || tail -f /dev/null

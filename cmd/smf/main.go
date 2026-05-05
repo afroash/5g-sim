@@ -3,9 +3,11 @@
 // Usage:
 //
 //	go run ./cmd/smf
+//	go run ./cmd/smf -config /etc/5g-sim/smf.yaml
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -17,7 +19,20 @@ func main() {
 	fmt.Println("║       5g-sim SMF starting        ║")
 	fmt.Println("╚══════════════════════════════════╝")
 
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "path to YAML config file")
+	flag.Parse()
+
 	cfg := smf.DefaultConfig()
+	if configPath != "" {
+		var err error
+		cfg, err = smf.LoadConfig(configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[SMF] Config: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	s, err := smf.New(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[SMF] Fatal: %v\n", err)

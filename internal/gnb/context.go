@@ -22,26 +22,26 @@ import (
 type Config struct {
 	// GlobalGNBID is the 28-bit gNB identity within the PLMN.
 	// Ref: TS 38.413 §9.3.1.6
-	GlobalGNBID uint32
+	GlobalGNBID uint32 `yaml:"global_gnb_id"`
 
 	// Name is the human-readable gNB name (RANNodeName IE).
-	Name string
+	Name string `yaml:"name"`
 
 	// PLMN is the PLMN this gNB belongs to, e.g. "00101".
-	PLMN string
+	PLMN string `yaml:"plmn"`
 
 	// TAC is the Tracking Area Code this gNB covers (3 bytes).
 	// Ref: TS 23.003 §19.4
-	TAC uint32
+	TAC uint32 `yaml:"tac"`
 
 	// AMFAddress is the IP/hostname of the AMF to connect to.
-	AMFAddress string
-
-	// Hub is the optional observability hub for packet capture.
-	Hub *obs.Hub
+	AMFAddress string `yaml:"amf_address"`
 
 	// AMFPort is the SCTP port of the AMF. Default: 38412.
-	AMFPort int
+	AMFPort int `yaml:"amf_port"`
+
+	// Hub is the optional observability hub for packet capture.
+	Hub *obs.Hub `yaml:"-"`
 }
 
 // DefaultConfig returns a sensible gNB config for local testing.

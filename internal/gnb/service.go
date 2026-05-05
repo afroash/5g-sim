@@ -38,17 +38,32 @@ func (g *GNB) Start() error {
 	d := ngapbuilder.NewDispatcher()
 	g.registerHandlers(d)
 
-	// Connect to AMF over SCTP.
-	// The client's read loop fires in a background goroutine automatically.
-	client, err := sctpclient.Connect(
-		cfg.AMFAddress,
-		cfg.AMFPort,
-		func(conn net.Conn, addr net.Addr, data []byte) {
-			d.Dispatch(conn, addr, data)
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("connect to AMF at %s:%d: %w", cfg.AMFAddress, cfg.AMFPort, err)
+	// Connect to AMF over SCTP with retries — Server B may start before
+	// Server A's AMF is ready.
+	// Ref: TS 38.412 §5.1 — gNB initiates SCTP association
+	const maxAttempts = 15
+	const retryInterval = 5 * time.Second
+
+	var client *sctpclient.Client
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		var connErr error
+		client, connErr = sctpclient.Connect(
+			cfg.AMFAddress,
+			cfg.AMFPort,
+			func(conn net.Conn, addr net.Addr, data []byte) {
+				d.Dispatch(conn, addr, data)
+			},
+		)
+		if connErr == nil {
+			break
+		}
+		if attempt == maxAttempts {
+			return fmt.Errorf("connect to AMF at %s:%d after %d attempts: %w",
+				cfg.AMFAddress, cfg.AMFPort, maxAttempts, connErr)
+		}
+		fmt.Printf("[gNB] AMF not reachable (%v), retry %d/%d in %s\n",
+			connErr, attempt, maxAttempts, retryInterval)
+		time.Sleep(retryInterval)
 	}
 
 	// Store the connection so Send() works.

@@ -1,0 +1,8 @@
+bind_address: "10.1.0.1"
+instance_id: "smf-sim-001"
+port: 8081
+plmn: "00101"
+ip_pool_cidr: "10.45.0.0/24"
+nrf_address: "http://10.1.0.1:8080"
+upf_pfcp_address: "http://10.1.1.1:8002"
+upf_gtp_address: "10.1.1.1:2152"

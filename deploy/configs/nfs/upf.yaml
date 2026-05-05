@@ -1,0 +1,3 @@
+gtp_port: 2152
+bind_addr: "10.1.1.1"
+pfcp_sim_port: 8002

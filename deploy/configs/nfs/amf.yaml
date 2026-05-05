@@ -1,0 +1,9 @@
+bind_address: "10.1.0.1"
+name: "5g-sim-amf"
+plmn: "00101"
+region_id: 1
+set_id: 1
+pointer: 0
+sctp_port: 38412
+smf_address: "http://10.1.0.1:8081"
+http_port: 8090

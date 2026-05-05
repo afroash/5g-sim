@@ -24,35 +24,45 @@ import (
 
 // Config holds the SMF's startup configuration.
 type Config struct {
+	// BindAddress is the IP this SMF advertises and binds to.
+	BindAddress string `yaml:"bind_address"`
+
 	// InstanceID is the SMF's UUID for NRF registration.
-	InstanceID string
+	InstanceID string `yaml:"instance_id"`
 
 	// Port is the HTTP port for the Nsmf_PDUSession API.
-	Port int
+	Port int `yaml:"port"`
 
 	// PLMN is the PLMN this SMF serves.
-	PLMN string
+	PLMN string `yaml:"plmn"`
 
 	// IPPoolCIDR is the address range for UE IP allocation.
-	IPPoolCIDR string
+	IPPoolCIDR string `yaml:"ip_pool_cidr"`
 
 	// NRFAddress is the NRF's base URL for registration.
-	NRFAddress string
+	NRFAddress string `yaml:"nrf_address"`
 
 	// UPFPFCPAddress is the UPF's PFCP-sim HTTP endpoint.
 	// Used to notify the UPF of new sessions.
-	UPFPFCPAddress string
+	UPFPFCPAddress string `yaml:"upf_pfcp_address"`
+
+	// UPFGTPAddress is the UPF's GTP-U endpoint ("ip:port") that the SMF
+	// returns to the gNB as the tunnel anchor.
+	// Ref: TS 29.281 §5.1
+	UPFGTPAddress string `yaml:"upf_gtp_address"`
 }
 
 // DefaultConfig returns sensible defaults for local development.
 func DefaultConfig() Config {
 	return Config{
+		BindAddress:    "127.0.0.1",
 		InstanceID:     "smf-sim-001",
 		Port:           8001,
 		PLMN:           "00101",
 		IPPoolCIDR:     "10.0.0.0/24",
 		NRFAddress:     "http://127.0.0.1:8000",
 		UPFPFCPAddress: "http://127.0.0.1:8002",
+		UPFGTPAddress:  "127.0.0.1:2152",
 	}
 }
 
@@ -177,7 +187,7 @@ func (s *SMF) createSMContext(w http.ResponseWriter, r *http.Request) {
 	// uplink GTP-U packets to the UPF.
 	// Ref: TS 29.281 §5.1 / TS 23.502 §4.3.2.2.1
 	ulTEID := AllocateTEID()
-	upfAddr := fmt.Sprintf("127.0.0.1:%d", 2152) // UPF GTP-U endpoint
+	upfAddr := s.config.UPFGTPAddress
 
 	// Create and store the session context
 	gtpTunnel := &GTPTunnel{
@@ -200,7 +210,7 @@ func (s *SMF) createSMContext(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[SMF] GTP tunnel: UL-TEID=0x%08X UPF=%s\n", ulTEID, upfAddr)
 
 	// Build the response with the context reference, allocated IP, and GTP tunnel
-	smfBase := fmt.Sprintf("http://127.0.0.1:%d", s.config.Port)
+	smfBase := fmt.Sprintf("http://%s:%d", s.config.BindAddress, s.config.Port)
 	resp := SmContextCreateResponse{
 		SmContextRef: fmt.Sprintf("%s/nsmf-pdusession/v1/sm-contexts/%s", smfBase, ctxID),
 		PDUAddress: &PDUAddress{
@@ -279,7 +289,7 @@ func (s *SMF) registerWithNRF() error {
 		NfType:        nrfclient.NFTypeSMF,
 		NfStatus:      nrfclient.NFStatusRegistered,
 		PlmnList:      []string{s.config.PLMN},
-		IPv4Addresses: []string{"127.0.0.1"},
+		IPv4Addresses: []string{s.config.BindAddress},
 		NfServices: []nrfclient.NFService{
 			{
 				ServiceInstanceID: "nsmf-pdusession-1",
@@ -287,7 +297,7 @@ func (s *SMF) registerWithNRF() error {
 				Versions:          []string{"v1"},
 				Scheme:            "http",
 				NFServiceStatus:   nrfclient.NFStatusRegistered,
-				APIPrefix:         fmt.Sprintf("http://127.0.0.1:%d", s.config.Port),
+				APIPrefix:         fmt.Sprintf("http://%s:%d", s.config.BindAddress, s.config.Port),
 			},
 		},
 	}

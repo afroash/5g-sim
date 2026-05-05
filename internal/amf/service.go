@@ -11,6 +11,7 @@ package amf
 import (
 	"fmt"
 	"net"
+	"net/http"
 
 	ngapdispatcher "github.com/afroash/5g-sim/internal/ngap"
 	sctpserver "github.com/afroash/5g-sim/internal/sctp"
@@ -30,6 +31,21 @@ func (a *AMF) Start() error {
 		a.config.SetID,
 		a.config.Pointer,
 	)
+
+	// Health check HTTP server — lets the entrypoint poll readiness
+	// without needing to probe the SCTP port.
+	go func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "ok")
+		})
+		addr := fmt.Sprintf("%s:%d", a.config.BindAddress, a.config.HTTPPort)
+		fmt.Printf("[AMF] Health check listening on %s\n", addr)
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			fmt.Printf("[AMF] Health server: %v\n", err)
+		}
+	}()
 
 	// Build the NGAP dispatcher and register all handlers.
 	d := ngapdispatcher.NewDispatcher()

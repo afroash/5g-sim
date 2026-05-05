@@ -33,7 +33,7 @@ ip link set eth2 up
 # 3. IP forwarding
 # ------------------------------------------------------------
 echo "[server-a] Enabling IP forwarding..."
-sysctl -w net.ipv4.ip_forward=1 > /dev/null
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
 # ------------------------------------------------------------
 # 4. FRR — owns OSPF adjacency with both leaves
@@ -47,12 +47,12 @@ chown -R frr:frr /etc/frr/
 
 # Wait for FRR to come up
 for i in $(seq 1 10); do
-    if vtysh -c "show version" > /dev/null 2>&1; then
-        echo "[server-a] FRR is up."
-        break
-    fi
-    echo "[server-a] Waiting for FRR... ($i/10)"
-    sleep 2
+  if vtysh -c "show version" >/dev/null 2>&1; then
+    echo "[server-a] FRR is up."
+    break
+  fi
+  echo "[server-a] Waiting for FRR... ($i/10)"
+  sleep 2
 done
 
 # ------------------------------------------------------------
@@ -78,6 +78,7 @@ vtysh -c "show ip ospf neighbor" 2>/dev/null || echo "FRR not ready yet"
 echo ""
 echo "--- Route Table ---"
 ip route show
+ip route delete default
 
 echo ""
 echo "[server-a] Phase 1 ready."
@@ -86,17 +87,39 @@ echo "[server-a] Stable address for NFs: 10.1.0.1"
 echo ""
 
 # ------------------------------------------------------------
-# Phase 2 placeholder: start NFs
-# Uncomment when binaries are baked in (Phase 2)
+# Phase 2: start NFs in dependency order with health checks
 # ------------------------------------------------------------
-# echo "[server-a] Starting NRF..."
-# /usr/local/bin/nrf &
-#
-# echo "[server-a] Starting AMF..."
-# /usr/local/bin/amf &
-#
-# echo "[server-a] Starting SMF..."
-# /usr/local/bin/smf &
 
-# Keep container alive, tail FRR log for visibility
-tail -f /var/log/frr/frr.log 2>/dev/null || tail -f /dev/null
+wait_http() {
+  local url=$1
+  echo "[server-a] Waiting for $url..."
+  for i in $(seq 1 30); do
+    if curl -sf "$url" >/dev/null 2>&1; then
+      echo "[server-a] Ready: $url"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "[server-a] WARNING: timeout waiting for $url — continuing"
+}
+
+echo "[server-a] Starting NRF..."
+/usr/local/bin/nrf -config /etc/5g-sim/nrf.yaml >/var/log/nrf.log 2>&1 &
+wait_http http://10.1.0.1:8080/health
+
+echo "[server-a] Starting AMF..."
+/usr/local/bin/amf -config /etc/5g-sim/amf.yaml >/var/log/amf.log 2>&1 &
+wait_http http://10.1.0.1:8090/health
+
+echo "[server-a] Starting SMF..."
+/usr/local/bin/smf -config /etc/5g-sim/smf.yaml >/var/log/smf.log 2>&1 &
+wait_http http://10.1.0.1:8081/health
+
+echo ""
+echo "[server-a] ========================================="
+echo "[server-a] Phase 2 complete — NRF, AMF, SMF running"
+echo "[server-a] ========================================="
+echo ""
+
+# Keep container alive, tail NF logs for visibility
+tail -f /var/log/nrf.log /var/log/amf.log /var/log/smf.log 2>/dev/null || tail -f /dev/null

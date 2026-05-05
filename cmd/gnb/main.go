@@ -1,17 +1,15 @@
 // cmd/gnb/main.go — gNB simulator process entry point.
 //
-// Connects to the AMF at 127.0.0.1:38412 and completes NG Setup.
+// Connects to the AMF and completes NG Setup.
 //
 // Usage:
 //
-//	# Terminal 1
-//	go run ./cmd/amf
-//
-//	# Terminal 2
 //	go run ./cmd/gnb
+//	go run ./cmd/gnb -config /etc/5g-sim/gnb.yaml
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -26,17 +24,29 @@ func main() {
 	fmt.Println("║       5g-sim gNB starting        ║")
 	fmt.Println("╚══════════════════════════════════╝")
 
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "path to YAML config file")
+	flag.Parse()
+
+	cfg := gnb.DefaultConfig()
+	if configPath != "" {
+		var err error
+		cfg, err = gnb.LoadConfig(configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[gNB] Config: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	hub, err := obs.NewHub("./captures-gnb")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[gNB] Observability init failed: %v\n", err)
 		// non-fatal — continue without capture
 	}
-
-	cfg := gnb.DefaultConfig()
 	cfg.Hub = hub
+
 	g := gnb.New(cfg)
 
-	// Graceful shutdown
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

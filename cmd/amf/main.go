@@ -6,11 +6,11 @@
 // Usage:
 //
 //	go run ./cmd/amf
-//
-// Environment can be extended later with flags/config file.
+//	go run ./cmd/amf -config /etc/5g-sim/amf.yaml
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -25,7 +25,20 @@ func main() {
 	fmt.Println("║       5g-sim AMF starting        ║")
 	fmt.Println("╚══════════════════════════════════╝")
 
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "path to YAML config file")
+	flag.Parse()
+
 	cfg := amf.DefaultConfig()
+	if configPath != "" {
+		var err error
+		cfg, err = amf.LoadConfig(configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[AMF] Config: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	a := amf.New(cfg)
 
 	hub, err := obs.NewHub("./captures")
@@ -35,21 +48,16 @@ func main() {
 	}
 	a.Hub = hub
 
-	// Register signal handler BEFORE starting anything.
-	// Buffered channel size 1 — signal package requires this.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	// Run AMF in background so main can block on the signal channel.
 	go func() {
 		if err := a.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "[AMF] Fatal: %v\n", err)
-			// Signal main to exit cleanly so captures are still written.
 			sig <- syscall.SIGTERM
 		}
 	}()
 
-	// Block until Ctrl-C or SIGTERM.
 	<-sig
 	fmt.Println("\n[AMF] Shutting down — writing captures...")
 	if a.Hub != nil {

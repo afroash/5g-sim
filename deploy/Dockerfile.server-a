@@ -1,11 +1,26 @@
 # ============================================================
 # Server A — Control Plane Server
 # Phase 1: Ubuntu + FRR for OSPF dual-homed routing.
-# Phase 2: Will add NRF, AMF, SMF Go binaries.
+# Phase 2: NRF, AMF, SMF Go binaries.
 #
-# Build context: deploy/ root
-#   docker build -t 5gsim/server-cp:latest -f servers/Dockerfile.server-a .
+# Build context: repo root
+#   docker build -t 5gsim/server-cp:latest -f deploy/Dockerfile.server-a .
 # ============================================================
+
+# ── Stage 1: Build Go binaries ──────────────────────────────
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/nrf ./cmd/nrf
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/amf ./cmd/amf
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/smf ./cmd/smf
+
+# ── Stage 2: Runtime ─────────────────────────────────────────
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,16 +40,22 @@ RUN sed -i 's/^zebra=no/zebra=yes/' /etc/frr/daemons && \
     sed -i 's/^staticd=no/staticd=yes/' /etc/frr/daemons
 
 # FRR config — OSPF dual-homed, advertises loopback 10.1.0.1/32
-COPY configs/server-a/frr.conf /etc/frr/frr.conf
+COPY deploy/configs/server-a/frr.conf /etc/frr/frr.conf
 RUN chown frr:frr /etc/frr/frr.conf
 
-# Entrypoint — network setup + FRR start + Phase 2 NF hooks
-COPY servers/entrypoint-server-a.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# NF binaries
+COPY --from=builder /out/nrf /usr/local/bin/nrf
+COPY --from=builder /out/amf /usr/local/bin/amf
+COPY --from=builder /out/smf /usr/local/bin/smf
 
-# Phase 2: bake in compiled Go binaries
-# COPY bin/nrf /usr/local/bin/nrf
-# COPY bin/amf /usr/local/bin/amf
-# COPY bin/smf /usr/local/bin/smf
+# NF config files
+RUN mkdir -p /etc/5g-sim
+COPY deploy/configs/nfs/nrf.yaml /etc/5g-sim/nrf.yaml
+COPY deploy/configs/nfs/amf.yaml /etc/5g-sim/amf.yaml
+COPY deploy/configs/nfs/smf.yaml /etc/5g-sim/smf.yaml
+
+# Entrypoint
+COPY deploy/servers/entrypoint-server-a.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

@@ -19,11 +19,6 @@ import (
 	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
-// SMFAddress is where the AMF will reach the SMF on N11.
-// In a real deployment this would come from NRF discovery.
-// We wire it directly for now — Phase 5 item.
-const SMFAddress = "http://127.0.0.1:8001"
-
 // HandlePDUSessionEstablishmentRequest processes a NAS PDU Session
 // Establishment Request delivered inside a NAS UL NAS Transport message.
 //
@@ -54,7 +49,7 @@ func (a *AMF) HandlePDUSessionEstablishmentRequest(conn net.Conn, ue *UEContext,
 
 	// Step 1: Call SMF via N11 to create the session context
 	// Ref: TS 23.502 §4.3.2.2.1 step 3
-	smfClient := smf.NewClient(SMFAddress)
+	smfClient := smf.NewClient(a.config.SMFAddress)
 
 	smCtxReq := smf.SmContextCreateRequest{
 		Supi:           ue.SUPI,

@@ -22,31 +22,44 @@ import (
 
 // Config holds the AMF's startup configuration.
 type Config struct {
+	// BindAddress is the IP to listen on; "" binds all interfaces.
+	BindAddress string `yaml:"bind_address"`
+
 	// Name is the human-readable AMF name advertised in NGSetupResponse.
-	Name string
+	Name string `yaml:"name"`
 
 	// PLMN is the PLMN this AMF serves, e.g. "00101" (MCC=001 MNC=01).
-	PLMN string
+	PLMN string `yaml:"plmn"`
 
 	// RegionID, SetID, Pointer form the GUAMI — the AMF's global identity.
 	// Ref: TS 23.003 §2.10
-	RegionID uint8
-	SetID    uint8
-	Pointer  uint8
+	RegionID uint8 `yaml:"region_id"`
+	SetID    uint8 `yaml:"set_id"`
+	Pointer  uint8 `yaml:"pointer"`
 
 	// SCTPPort is the port to listen on. Default: 38412.
-	SCTPPort int
+	SCTPPort int `yaml:"sctp_port"`
+
+	// SMFAddress is the N11 base URL for reaching the SMF.
+	// Ref: TS 29.502 — Nsmf_PDUSession service
+	SMFAddress string `yaml:"smf_address"`
+
+	// HTTPPort is the port for the health check endpoint.
+	HTTPPort int `yaml:"http_port"`
 }
 
 // DefaultConfig returns a sensible config for local development/testing.
 func DefaultConfig() Config {
 	return Config{
-		Name:     "5g-sim-amf",
-		PLMN:     "00101",
-		RegionID: 1,
-		SetID:    1,
-		Pointer:  0,
-		SCTPPort: 38412,
+		BindAddress: "",
+		Name:        "5g-sim-amf",
+		PLMN:        "00101",
+		RegionID:    1,
+		SetID:       1,
+		Pointer:     0,
+		SCTPPort:    38412,
+		SMFAddress:  "http://127.0.0.1:8001",
+		HTTPPort:    8090,
 	}
 }
 

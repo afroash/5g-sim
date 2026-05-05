@@ -24,17 +24,21 @@ import (
 
 // Config holds the NRF's startup configuration.
 type Config struct {
+	// BindAddress is the IP to listen on; "" binds all interfaces.
+	BindAddress string `yaml:"bind_address"`
+
 	// Port is the HTTP port to listen on.
-	Port int
+	Port int `yaml:"port"`
 
 	// ValidityPeriod is how long discovery results are valid (seconds).
 	// Ref: TS 29.510 §6.1.6.2.36
-	ValidityPeriod int
+	ValidityPeriod int `yaml:"validity_period"`
 }
 
 // DefaultConfig returns sensible defaults for local development.
 func DefaultConfig() Config {
 	return Config{
+		BindAddress:    "",
 		Port:           8000,
 		ValidityPeriod: 3600,
 	}
@@ -77,7 +81,7 @@ func (n *NRF) Start() error {
 		fmt.Fprint(w, "ok")
 	})
 
-	addr := fmt.Sprintf(":%d", n.config.Port)
+	addr := fmt.Sprintf("%s:%d", n.config.BindAddress, n.config.Port)
 	fmt.Printf("[NRF] HTTP server listening on %s\n", addr)
 	fmt.Println("[NRF] Routes:")
 	fmt.Println("[NRF]   PUT    /nnrf-nfm/v1/nf-instances/{id}  → Register")

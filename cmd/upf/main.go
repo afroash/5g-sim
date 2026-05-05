@@ -6,9 +6,11 @@
 // Usage:
 //
 //	go run ./cmd/upf
+//	go run ./cmd/upf -config /etc/5g-sim/upf.yaml
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -23,27 +25,38 @@ func main() {
 	fmt.Println("║       5g-sim UPF starting        ║")
 	fmt.Println("╚══════════════════════════════════╝")
 
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "path to YAML config file")
+	flag.Parse()
+
+	cfg := upf.DefaultConfig()
+	if configPath != "" {
+		var err error
+		cfg, err = upf.LoadConfig(configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[UPF] Config: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	hub, err := obs.NewHub("./captures")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[UPF] Observability init failed: %v\n", err)
 		// non-fatal — continue without capture
 	}
-
-	cfg := upf.DefaultConfig()
 	cfg.Hub = hub
+
 	u, err := upf.New(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[UPF] Fatal: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Start PFCP-sim API so the SMF can register sessions.
-	if err := u.StartPFCPSim(8002); err != nil {
+	if err := u.StartPFCPSim(cfg.PFCPSimPort); err != nil {
 		fmt.Fprintf(os.Stderr, "[UPF] PFCP-sim start failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Graceful shutdown
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -55,6 +68,5 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// Start GTP-U tunnel — blocks until shutdown.
 	u.Start()
 }

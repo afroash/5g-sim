@@ -1,0 +1,6 @@
+global_gnb_id: 0x1234
+name: "5g-sim-gnb-01"
+plmn: "00101"
+tac: 0x000001
+amf_address: "10.1.0.1"
+amf_port: 38412
