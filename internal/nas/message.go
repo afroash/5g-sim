@@ -322,6 +322,116 @@ func DecodeRegistrationAccept(payload []byte) (*RegistrationAccept, error) {
 	return acc, nil
 }
 
+// BuildULNASTransportMM wraps an SM payload in a NAS MM UL NAS Transport message.
+// Used by the UE to send SM messages (e.g. PDU Session Request) toward the network.
+// Ref: TS 24.501 §8.2.14
+func BuildULNASTransportMM(pduSessionID uint8, smPayload []byte) []byte {
+	msg := []byte{
+		EPD5GSMobilityManagement,
+		SecurityHeaderTypePlain,
+		0x67, // UL NAS Transport message type
+		0x01, // Payload container type = N1 SM info
+	}
+	msg = append(msg, byte(len(smPayload)>>8), byte(len(smPayload)))
+	msg = append(msg, smPayload...)
+	msg = append(msg, 0x12, pduSessionID) // PDU Session ID IE
+	return msg
+}
+
+// BuildDLNASTransportMM wraps an SM payload in a NAS MM DL NAS Transport message.
+// Used by the network to deliver SM messages to the UE.
+// Ref: TS 24.501 §8.2.15
+func BuildDLNASTransportMM(pduSessionID uint8, smPayload []byte) []byte {
+	msg := []byte{
+		EPD5GSMobilityManagement,
+		SecurityHeaderTypePlain,
+		0x68, // DL NAS Transport message type
+		0x01, // Payload container type = N1 SM info
+	}
+	msg = append(msg, byte(len(smPayload)>>8), byte(len(smPayload)))
+	msg = append(msg, smPayload...)
+	msg = append(msg, 0x12, pduSessionID)
+	return msg
+}
+
+// DecodeDLNASTransport parses a NAS MM DL NAS Transport (type 0x68) message.
+// Returns the PDU session ID and the SM container payload.
+// Ref: TS 24.501 §8.2.15
+func DecodeDLNASTransport(data []byte) (pduSessionID uint8, smPayload []byte, err error) {
+	// Header: EPD(1) + SecHdr(1) + MsgType(1) + ContainerType(1) + ContainerLen(2) = 6 bytes
+	if len(data) < 6 {
+		return 0, nil, fmt.Errorf("nas: DL NAS Transport too short: %d bytes", len(data))
+	}
+	if data[2] != 0x68 {
+		return 0, nil, fmt.Errorf("nas: expected DL NAS Transport (0x68), got 0x%02X", data[2])
+	}
+	containerLen := int(data[4])<<8 | int(data[5])
+	if 6+containerLen > len(data) {
+		return 0, nil, fmt.Errorf("nas: DL NAS Transport container length exceeds message")
+	}
+	smPayload = data[6 : 6+containerLen]
+	// PDU Session ID IE (IEI=0x12) follows the container
+	offset := 6 + containerLen
+	for offset+1 < len(data) {
+		if data[offset] == 0x12 {
+			pduSessionID = data[offset+1]
+			break
+		}
+		offset++
+	}
+	return pduSessionID, smPayload, nil
+}
+
+// DecodePDUSessionEstablishmentAccept parses a 5GS SM PDU Session Establishment Accept.
+// Extracts the allocated UE IP address and DNN.
+// Ref: TS 24.501 §8.3.2
+func DecodePDUSessionEstablishmentAccept(data []byte) (*PDUSessionEstablishmentAccept, error) {
+	if len(data) < 5 {
+		return nil, fmt.Errorf("nas: PDU Session Accept too short: %d bytes", len(data))
+	}
+	acc := &PDUSessionEstablishmentAccept{
+		PDUSessionID: data[1],
+	}
+	// Skip mandatory QoS Rules (2-byte length prefix)
+	offset := 5
+	if offset+2 > len(data) {
+		return acc, nil
+	}
+	qosLen := int(data[offset])<<8 | int(data[offset+1])
+	offset += 2 + qosLen
+	// Skip Session AMBR (1-byte length prefix)
+	if offset+1 > len(data) {
+		return acc, nil
+	}
+	ambrLen := int(data[offset])
+	offset += 1 + ambrLen
+	// Parse optional IEs
+	for offset+1 < len(data) {
+		iei := data[offset]
+		offset++
+		if offset >= len(data) {
+			break
+		}
+		ieLen := int(data[offset])
+		offset++
+		if offset+ieLen > len(data) {
+			break
+		}
+		ieData := data[offset : offset+ieLen]
+		offset += ieLen
+		switch iei {
+		case 0x29: // PDU Address
+			if len(ieData) >= 5 && ieData[0] == 0x01 {
+				acc.AllocatedIP = fmt.Sprintf("%d.%d.%d.%d",
+					ieData[1], ieData[2], ieData[3], ieData[4])
+			}
+		case 0x25: // DNN
+			acc.DNN = decodeDNN(ieData)
+		}
+	}
+	return acc, nil
+}
+
 // --- Helpers ---
 
 // encodeSUPI encodes a SUPI (e.g. "imsi-001010000000001") as a 5G mobile identity.

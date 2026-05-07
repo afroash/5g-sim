@@ -199,3 +199,92 @@ func TestDispatcherUnknownMessage(t *testing.T) {
 	d.Dispatch(nil, nil, data)
 	t.Log("Unregistered procedure handled gracefully ✓")
 }
+
+// --- PDU Session Resource Setup Tests ---
+
+// TestBuildPDUSessionResourceSetupRequest verifies the request encodes cleanly
+// and decodes back to the correct procedure code.
+// Ref: TS 38.413 §9.2.1.1
+func TestBuildPDUSessionResourceSetupRequest(t *testing.T) {
+	data, err := BuildPDUSessionResourceSetupRequest(
+		100,           // AMF-UE-NGAP-ID
+		1,             // RAN-UE-NGAP-ID
+		1,             // PDU Session ID
+		"10.1.1.1",    // UPF GTP-U address
+		0xDEADBEEF,    // UL TEID
+	)
+	if err != nil {
+		t.Fatalf("BuildPDUSessionResourceSetupRequest: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("encoded PDUSessionResourceSetupRequest is empty")
+	}
+
+	pdu, err := ngap.Decoder(data)
+	if err != nil {
+		t.Fatalf("Decoder: %v", err)
+	}
+
+	if pdu.Present != ngapType.NGAPPDUPresentInitiatingMessage {
+		t.Errorf("PDU present = %d, want InitiatingMessage (%d)",
+			pdu.Present, ngapType.NGAPPDUPresentInitiatingMessage)
+	}
+	if pdu.InitiatingMessage.ProcedureCode.Value != ngapType.ProcedureCodePDUSessionResourceSetup {
+		t.Errorf("ProcedureCode = %d, want PDUSessionResourceSetup (%d)",
+			pdu.InitiatingMessage.ProcedureCode.Value, ngapType.ProcedureCodePDUSessionResourceSetup)
+	}
+
+	t.Logf("PDUSessionResourceSetupRequest: %d bytes, procedure code %d ✓",
+		len(data), pdu.InitiatingMessage.ProcedureCode.Value)
+}
+
+// TestBuildPDUSessionResourceSetupResponse verifies the response encodes and
+// decodes, and that DecodePDUSessionResourceSetupResponse extracts the tunnel.
+// Ref: TS 38.413 §9.2.1.2
+func TestBuildPDUSessionResourceSetupResponse(t *testing.T) {
+	const (
+		amfUeNgapID int64  = 100
+		dlTEID      uint32 = 0xCAFEBABE
+		gnbAddr            = "192.168.1.10"
+	)
+
+	data, err := BuildPDUSessionResourceSetupResponse(amfUeNgapID, 1, gnbAddr, dlTEID)
+	if err != nil {
+		t.Fatalf("BuildPDUSessionResourceSetupResponse: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("encoded PDUSessionResourceSetupResponse is empty")
+	}
+
+	pdu, err := ngap.Decoder(data)
+	if err != nil {
+		t.Fatalf("Decoder: %v", err)
+	}
+
+	if pdu.Present != ngapType.NGAPPDUPresentSuccessfulOutcome {
+		t.Errorf("PDU present = %d, want SuccessfulOutcome (%d)",
+			pdu.Present, ngapType.NGAPPDUPresentSuccessfulOutcome)
+	}
+	if pdu.SuccessfulOutcome.ProcedureCode.Value != ngapType.ProcedureCodePDUSessionResourceSetup {
+		t.Errorf("ProcedureCode = %d, want PDUSessionResourceSetup (%d)",
+			pdu.SuccessfulOutcome.ProcedureCode.Value, ngapType.ProcedureCodePDUSessionResourceSetup)
+	}
+
+	// Decode the response and verify the tunnel info round-trips correctly.
+	gotAMFID, gotAddr, gotTEID, err := DecodePDUSessionResourceSetupResponse(pdu)
+	if err != nil {
+		t.Fatalf("DecodePDUSessionResourceSetupResponse: %v", err)
+	}
+	if gotAMFID != amfUeNgapID {
+		t.Errorf("AMF-UE-NGAP-ID = %d, want %d", gotAMFID, amfUeNgapID)
+	}
+	if gotAddr != gnbAddr {
+		t.Errorf("gNB addr = %q, want %q", gotAddr, gnbAddr)
+	}
+	if gotTEID != dlTEID {
+		t.Errorf("DL TEID = 0x%08X, want 0x%08X", gotTEID, dlTEID)
+	}
+
+	t.Logf("PDUSessionResourceSetupResponse: %d bytes, gNB=%s DL-TEID=0x%08X ✓",
+		len(data), gotAddr, gotTEID)
+}

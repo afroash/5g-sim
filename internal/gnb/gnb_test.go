@@ -182,6 +182,89 @@ func TestHandleNGSetupFailure(t *testing.T) {
 	t.Log("HandleNGSetupFailure: gNB remains unsetup ✓")
 }
 
+// TestHandlePDUSessionResourceSetupRequest verifies the gNB correctly processes
+// a PDU Session Resource Setup Request from the AMF, stores the UPF tunnel info,
+// and sends back a PDU Session Resource Setup Response with its DL F-TEID.
+//
+// Ref: TS 38.413 §9.2.1.1
+func TestHandlePDUSessionResourceSetupRequest(t *testing.T) {
+	g := New(DefaultConfig())
+	conn := newMockConn()
+
+	// First complete NG Setup so the gNB has an AMF context.
+	respBytes, err := ngapbuilder.BuildNGSetupResponse("test-amf", "00101", 1, 1, 0)
+	if err != nil {
+		t.Fatalf("BuildNGSetupResponse: %v", err)
+	}
+	setupPDU, err := ngap.Decoder(respBytes)
+	if err != nil {
+		t.Fatalf("Decoder (setup): %v", err)
+	}
+	g.HandleNGSetupResponse(conn, setupPDU)
+
+	// Build a PDUSessionResourceSetupRequest from the AMF carrying UPF tunnel info.
+	reqBytes, err := ngapbuilder.BuildPDUSessionResourceSetupRequest(
+		100,        // AMF-UE-NGAP-ID
+		1,          // RAN-UE-NGAP-ID
+		1,          // PDU Session ID
+		"10.1.1.1", // UPF GTP-U address
+		0xDEADBEEF, // UL TEID
+	)
+	if err != nil {
+		t.Fatalf("BuildPDUSessionResourceSetupRequest: %v", err)
+	}
+
+	reqPDU, err := ngap.Decoder(reqBytes)
+	if err != nil {
+		t.Fatalf("Decoder (PDUSessionResourceSetupRequest): %v", err)
+	}
+
+	// Clear any writes from NG Setup
+	conn.mu.Lock()
+	conn.written = nil
+	conn.mu.Unlock()
+
+	g.HandlePDUSessionResourceSetupRequest(conn, reqPDU)
+
+	// gNB should have sent a PDUSessionResourceSetupResponse
+	resp := conn.LastWritten()
+	if resp == nil {
+		t.Fatal("gNB did not send a PDUSessionResourceSetupResponse")
+	}
+
+	respPDU, err := ngap.Decoder(resp)
+	if err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if respPDU.Present != ngapType.NGAPPDUPresentSuccessfulOutcome {
+		t.Errorf("response PDU present = %d, want SuccessfulOutcome (%d)",
+			respPDU.Present, ngapType.NGAPPDUPresentSuccessfulOutcome)
+	}
+	if respPDU.SuccessfulOutcome.ProcedureCode.Value != ngapType.ProcedureCodePDUSessionResourceSetup {
+		t.Errorf("response procedure code = %d, want PDUSessionResourceSetup (%d)",
+			respPDU.SuccessfulOutcome.ProcedureCode.Value, ngapType.ProcedureCodePDUSessionResourceSetup)
+	}
+
+	// Decode response to verify it carries a valid DL F-TEID
+	amfID, gnbAddr, dlTEID, err := ngapbuilder.DecodePDUSessionResourceSetupResponse(respPDU)
+	if err != nil {
+		t.Fatalf("DecodePDUSessionResourceSetupResponse: %v", err)
+	}
+	if amfID != 100 {
+		t.Errorf("AMF-UE-NGAP-ID = %d, want 100", amfID)
+	}
+	if gnbAddr == "" {
+		t.Error("gNB GTP address is empty")
+	}
+	if dlTEID == 0 {
+		t.Error("DL TEID is 0")
+	}
+
+	t.Logf("PDUSessionResourceSetupRequest → Response: gNB=%s DL-TEID=0x%08X ✓",
+		gnbAddr, dlTEID)
+}
+
 // TestDecodePLMN verifies the PLMN decode is the inverse of the encode
 // in internal/ngap/builder.go.
 func TestDecodePLMN(t *testing.T) {

@@ -23,7 +23,7 @@ type mockConn struct {
 	remoteAddr net.Addr
 }
 
-func newMockConn(addr string) *mockConn {
+func newMockConn(_ string) *mockConn {
 	return &mockConn{
 		remoteAddr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 38412},
 	}
@@ -193,4 +193,55 @@ func TestHandleNGSetupRequest_MissingIEs(t *testing.T) {
 	}
 
 	t.Log("Missing IEs → NGSetupFailure ✓")
+}
+
+// TestHandlePDUSessionResourceSetupResponse verifies that when the gNB sends
+// back a PDU Session Resource Setup Response, the AMF extracts the DL F-TEID
+// and delivers the deferred NAS PDU Session Establishment Accept to the UE.
+//
+// Ref: TS 38.413 §9.2.1.2
+func TestHandlePDUSessionResourceSetupResponse(t *testing.T) {
+	a := New(DefaultConfig())
+	conn := newMockConn("127.0.0.1:40000")
+
+	// Pre-populate a UE context with a pending NAS Accept, simulating the state
+	// after HandlePDUSessionEstablishmentRequest ran.
+	ue := &UEContext{
+		SUPI:                "imsi-001010000000001",
+		AllocatedIP:         "10.45.0.2",
+		PendingNASAccept:    []byte{0x7E, 0x00, 0xC2, 0x01, 0x00, 0x0A}, // minimal NAS SM
+		PendingPDUSessionID: 1,
+	}
+	a.ues.Add(ue) // assigns AMFUeNgapID = 1
+
+	// Build a PDUSessionResourceSetupResponse from the gNB (DL F-TEID)
+	respBytes, err := ngapbuilder.BuildPDUSessionResourceSetupResponse(
+		ue.AMFUeNgapID, // AMF-UE-NGAP-ID
+		1,              // RAN-UE-NGAP-ID
+		"10.1.1.1",     // gNB GTP-U address
+		0xCAFEBABE,     // DL TEID
+	)
+	if err != nil {
+		t.Fatalf("BuildPDUSessionResourceSetupResponse: %v", err)
+	}
+
+	pdu, err := ngap.Decoder(respBytes)
+	if err != nil {
+		t.Fatalf("Decoder: %v", err)
+	}
+
+	a.HandlePDUSessionResourceSetupResponse(conn, pdu)
+
+	// AMF should have sent the deferred NAS PDU Session Establishment Accept
+	written := conn.LastWritten()
+	if written == nil {
+		t.Fatal("AMF did not send NAS PDU Session Accept after receiving gNB response")
+	}
+
+	// The pending accept should be cleared
+	if ue.PendingNASAccept != nil {
+		t.Error("PendingNASAccept should be nil after response is delivered")
+	}
+
+	t.Logf("HandlePDUSessionResourceSetupResponse: NAS Accept delivered (%d bytes) ✓", len(written))
 }

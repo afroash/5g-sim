@@ -132,12 +132,12 @@ func BuildPDUSessionEstablishmentAccept(pduSessionID uint8, allocatedIP string, 
 	msg = append(msg, qosRules...)
 
 	// Session AMBR — mandatory: max bit rate for the session
-	// Ref: TS 24.501 §9.11.4.14 — encode as 6 bytes (UL + DL, unit + value each)
-	// 100 Mbps in each direction
+	// Ref: TS 24.501 §9.11.4.14 — 6 content bytes: DL(unit 1B + value 2B) + UL(unit 1B + value 2B)
+	// 100 Mbps in each direction (unit=6 means 1Mbps, value=100 → 100Mbps)
 	sessionAMBR := []byte{
-		0x06,       // length
-		0x06, 0x64, // DL: unit=6 (1Mbps), value=100 → 100Mbps
-		0x06, 0x64, // UL: unit=6 (1Mbps), value=100 → 100Mbps
+		0x06,             // length = 6 content bytes
+		0x06, 0x00, 0x64, // DL: unit=6 (1Mbps), value=100 (2 bytes BE) → 100Mbps
+		0x06, 0x00, 0x64, // UL: unit=6 (1Mbps), value=100 (2 bytes BE) → 100Mbps
 	}
 	msg = append(msg, sessionAMBR...)
 

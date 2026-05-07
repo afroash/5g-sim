@@ -145,6 +145,98 @@ func TestRegistrationReject(t *testing.T) {
 	t.Logf("RegistrationReject: cause=0x%02X ✓", CausePLMNNotAllowed)
 }
 
+// TestBuildULNASTransportMM verifies the UL NAS Transport wrapper byte layout.
+// Ref: TS 24.501 §8.2.14
+func TestBuildULNASTransportMM(t *testing.T) {
+	smPayload := []byte{0x01, 0x02, 0x03}
+	msg := BuildULNASTransportMM(1, smPayload)
+
+	if msg[0] != EPD5GSMobilityManagement {
+		t.Errorf("byte[0] EPD = 0x%02X, want 0x%02X", msg[0], EPD5GSMobilityManagement)
+	}
+	if msg[2] != 0x67 {
+		t.Errorf("byte[2] MsgType = 0x%02X, want 0x67 (UL NAS Transport)", msg[2])
+	}
+	if msg[3] != 0x01 {
+		t.Errorf("byte[3] ContainerType = 0x%02X, want 0x01 (N1 SM info)", msg[3])
+	}
+	containerLen := int(msg[4])<<8 | int(msg[5])
+	if containerLen != len(smPayload) {
+		t.Errorf("container length = %d, want %d", containerLen, len(smPayload))
+	}
+	if string(msg[6:6+len(smPayload)]) != string(smPayload) {
+		t.Error("SM payload not preserved correctly")
+	}
+	// PDU Session ID IE
+	if msg[6+len(smPayload)] != 0x12 {
+		t.Errorf("PDU Session ID IEI = 0x%02X, want 0x12", msg[6+len(smPayload)])
+	}
+	if msg[7+len(smPayload)] != 1 {
+		t.Errorf("PDU Session ID = %d, want 1", msg[7+len(smPayload)])
+	}
+
+	t.Logf("BuildULNASTransportMM: %d bytes ✓", len(msg))
+}
+
+// TestDecodeDLNASTransport verifies that BuildDLNASTransportMM and DecodeDLNASTransport
+// are exact inverses.
+// Ref: TS 24.501 §8.2.15
+func TestDecodeDLNASTransport(t *testing.T) {
+	const pduSessionID = uint8(1)
+	smPayload := []byte{0x2E, 0x01, 0xC2, 0x12, 0x05} // minimal SM message bytes
+
+	encoded := BuildDLNASTransportMM(pduSessionID, smPayload)
+
+	gotPDUSessionID, gotSM, err := DecodeDLNASTransport(encoded)
+	if err != nil {
+		t.Fatalf("DecodeDLNASTransport: %v", err)
+	}
+	if gotPDUSessionID != pduSessionID {
+		t.Errorf("PDU session ID = %d, want %d", gotPDUSessionID, pduSessionID)
+	}
+	if string(gotSM) != string(smPayload) {
+		t.Errorf("SM payload mismatch: got %v, want %v", gotSM, smPayload)
+	}
+	t.Logf("DL NAS Transport round-trip: pduSessionID=%d SM=%d bytes ✓",
+		gotPDUSessionID, len(gotSM))
+}
+
+// TestDecodeDLNASTransport_TooShort verifies that DecodeDLNASTransport rejects
+// malformed messages that are too short.
+func TestDecodeDLNASTransport_TooShort(t *testing.T) {
+	_, _, err := DecodeDLNASTransport([]byte{0x7E, 0x00, 0x68})
+	if err == nil {
+		t.Fatal("expected error for too-short DL NAS Transport, got nil")
+	}
+	t.Logf("short message correctly rejected: %v ✓", err)
+}
+
+// TestDecodePDUSessionEstablishmentAccept verifies that BuildPDUSessionEstablishmentAccept
+// and DecodePDUSessionEstablishmentAccept round-trip the IP and DNN.
+// Ref: TS 24.501 §8.3.2
+func TestDecodePDUSessionEstablishmentAccept(t *testing.T) {
+	const (
+		pduSessionID = uint8(1)
+		allocatedIP  = "10.45.0.2"
+		dnn          = "internet"
+	)
+
+	encoded := BuildPDUSessionEstablishmentAccept(pduSessionID, allocatedIP, dnn)
+
+	acc, err := DecodePDUSessionEstablishmentAccept(encoded)
+	if err != nil {
+		t.Fatalf("DecodePDUSessionEstablishmentAccept: %v", err)
+	}
+	if acc.AllocatedIP != allocatedIP {
+		t.Errorf("AllocatedIP = %q, want %q", acc.AllocatedIP, allocatedIP)
+	}
+	if acc.DNN != dnn {
+		t.Errorf("DNN = %q, want %q", acc.DNN, dnn)
+	}
+
+	t.Logf("PDU Session Accept round-trip: IP=%s DNN=%s ✓", acc.AllocatedIP, acc.DNN)
+}
+
 // TestNSSAIRoundTrip verifies NSSAI encode/decode.
 func TestNSSAIRoundTrip(t *testing.T) {
 	input := []SNSSAI{

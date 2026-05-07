@@ -28,10 +28,15 @@ echo "[server-b] Bringing up eth2 (Leaf2 uplink)..."
 ip link set eth2 up
 
 # ------------------------------------------------------------
-# 3. IP forwarding — required for GTP-U decap + N6 routing
+# 3. IP forwarding + reverse path filter
+#    ip_forward: required for GTP-U decap + N6 routing
+#    rp_filter=0: allows GTP-U relay between UE-facing (port 2153)
+#    and UPF-facing tunnels which arrive from different source subnets
 # ------------------------------------------------------------
 echo "[server-b] Enabling IP forwarding..."
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sysctl -w net.ipv4.conf.all.rp_filter=0 >/dev/null
+sysctl -w net.ipv4.conf.default.rp_filter=0 >/dev/null
 
 # ------------------------------------------------------------
 # 4. FRR — owns OSPF adjacency with both leaves

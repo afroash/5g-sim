@@ -10,8 +10,10 @@
 package ngap
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"net"
 
 	"github.com/free5gc/aper"
 	"github.com/free5gc/ngap"
@@ -342,4 +344,299 @@ func encodeNGAP(pdu ngapType.NGAPPDU) ([]byte, error) {
 // EncodeNGAP is the exported wrapper for use by other packages (amf, gnb).
 func EncodeNGAP(pdu ngapType.NGAPPDU) ([]byte, error) {
 	return encodeNGAP(pdu)
+}
+
+// BuildPDUSessionResourceSetupRequest constructs the NGAP PDU Session Resource Setup Request
+// sent by the AMF to the gNB carrying the UPF F-TEID.
+//
+// The UPF F-TEID is embedded in a PDUSessionResourceSetupRequestTransfer,
+// separately APER-encoded and carried as an OctetString.
+//
+// Ref: TS 38.413 §9.2.1.1
+func BuildPDUSessionResourceSetupRequest(
+	amfUeNgapID, ranUeNgapID int64,
+	pduSessionID uint8,
+	upfAddr string,
+	ulTEID uint32,
+) ([]byte, error) {
+	// Parse IP from upfAddr — strip port if present
+	host, _, err := net.SplitHostPort(upfAddr)
+	if err != nil {
+		host = upfAddr
+	}
+	ipv4 := net.ParseIP(host).To4()
+	if ipv4 == nil {
+		return nil, fmt.Errorf("BuildPDUSessionResourceSetupRequest: invalid UPF IP %q", upfAddr)
+	}
+	teidBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(teidBytes, ulTEID)
+
+	// Build the inner PDUSessionResourceSetupRequestTransfer
+	transfer := ngapType.PDUSessionResourceSetupRequestTransfer{}
+
+	// IE: ULNGUUPTNLInformation — the UPF's GTP-U F-TEID for uplink
+	// Ref: TS 38.413 §9.3.1.9
+	{
+		ie := ngapType.PDUSessionResourceSetupRequestTransferIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDULNGUUPTNLInformation
+		ie.Criticality.Value = ngapType.CriticalityPresentReject
+		ie.Value.Present = ngapType.PDUSessionResourceSetupRequestTransferIEsPresentULNGUUPTNLInformation
+		ie.Value.ULNGUUPTNLInformation = &ngapType.UPTransportLayerInformation{
+			Present: ngapType.UPTransportLayerInformationPresentGTPTunnel,
+			GTPTunnel: &ngapType.GTPTunnel{
+				TransportLayerAddress: ngapType.TransportLayerAddress{
+					Value: aper.BitString{Bytes: ipv4, BitLength: 32},
+				},
+				GTPTEID: ngapType.GTPTEID{Value: teidBytes},
+			},
+		}
+		transfer.ProtocolIEs.List = append(transfer.ProtocolIEs.List, ie)
+	}
+
+	// IE: PDUSessionType — IPv4
+	// Ref: TS 38.413 §9.3.1.31
+	{
+		ie := ngapType.PDUSessionResourceSetupRequestTransferIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDPDUSessionType
+		ie.Criticality.Value = ngapType.CriticalityPresentReject
+		ie.Value.Present = ngapType.PDUSessionResourceSetupRequestTransferIEsPresentPDUSessionType
+		ie.Value.PDUSessionType = &ngapType.PDUSessionType{Value: ngapType.PDUSessionTypePresentIpv4}
+		transfer.ProtocolIEs.List = append(transfer.ProtocolIEs.List, ie)
+	}
+
+	// IE: QosFlowSetupRequestList — one default QoS flow (5QI=9, ARP=8)
+	// Ref: TS 38.413 §9.3.1.21
+	{
+		ie := ngapType.PDUSessionResourceSetupRequestTransferIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDQosFlowSetupRequestList
+		ie.Criticality.Value = ngapType.CriticalityPresentReject
+		ie.Value.Present = ngapType.PDUSessionResourceSetupRequestTransferIEsPresentQosFlowSetupRequestList
+		ie.Value.QosFlowSetupRequestList = &ngapType.QosFlowSetupRequestList{
+			List: []ngapType.QosFlowSetupRequestItem{
+				{
+					QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: 1},
+					QosFlowLevelQosParameters: ngapType.QosFlowLevelQosParameters{
+						QosCharacteristics: ngapType.QosCharacteristics{
+							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
+							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
+								FiveQI: ngapType.FiveQI{Value: 9},
+							},
+						},
+						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
+							PriorityLevelARP: ngapType.PriorityLevelARP{Value: 8},
+							PreEmptionCapability: ngapType.PreEmptionCapability{
+								Value: ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
+							},
+							PreEmptionVulnerability: ngapType.PreEmptionVulnerability{
+								Value: ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
+							},
+						},
+					},
+				},
+			},
+		}
+		transfer.ProtocolIEs.List = append(transfer.ProtocolIEs.List, ie)
+	}
+
+	transferBytes, err := aper.Marshal(transfer)
+	if err != nil {
+		return nil, fmt.Errorf("BuildPDUSessionResourceSetupRequest: marshal transfer: %w", err)
+	}
+
+	// Build outer PDU
+	pdu := ngapType.NGAPPDU{}
+	pdu.Present = ngapType.NGAPPDUPresentInitiatingMessage
+	pdu.InitiatingMessage = new(ngapType.InitiatingMessage)
+	pdu.InitiatingMessage.ProcedureCode.Value = ngapType.ProcedureCodePDUSessionResourceSetup
+	pdu.InitiatingMessage.Criticality.Value = ngapType.CriticalityPresentReject
+	pdu.InitiatingMessage.Value.Present = ngapType.InitiatingMessagePresentPDUSessionResourceSetupRequest
+
+	req := ngapType.PDUSessionResourceSetupRequest{}
+
+	// IE: AMF-UE-NGAP-ID
+	{
+		ie := ngapType.PDUSessionResourceSetupRequestIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDAMFUENGAPID
+		ie.Criticality.Value = ngapType.CriticalityPresentReject
+		ie.Value.Present = ngapType.PDUSessionResourceSetupRequestIEsPresentAMFUENGAPID
+		ie.Value.AMFUENGAPID = &ngapType.AMFUENGAPID{Value: amfUeNgapID}
+		req.ProtocolIEs.List = append(req.ProtocolIEs.List, ie)
+	}
+
+	// IE: RAN-UE-NGAP-ID
+	{
+		ie := ngapType.PDUSessionResourceSetupRequestIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDRANUENGAPID
+		ie.Criticality.Value = ngapType.CriticalityPresentReject
+		ie.Value.Present = ngapType.PDUSessionResourceSetupRequestIEsPresentRANUENGAPID
+		ie.Value.RANUENGAPID = &ngapType.RANUENGAPID{Value: ranUeNgapID}
+		req.ProtocolIEs.List = append(req.ProtocolIEs.List, ie)
+	}
+
+	// IE: PDUSessionResourceSetupListSUReq
+	{
+		ie := ngapType.PDUSessionResourceSetupRequestIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDPDUSessionResourceSetupListSUReq
+		ie.Criticality.Value = ngapType.CriticalityPresentReject
+		ie.Value.Present = ngapType.PDUSessionResourceSetupRequestIEsPresentPDUSessionResourceSetupListSUReq
+		ie.Value.PDUSessionResourceSetupListSUReq = &ngapType.PDUSessionResourceSetupListSUReq{
+			List: []ngapType.PDUSessionResourceSetupItemSUReq{
+				{
+					PDUSessionID: ngapType.PDUSessionID{Value: int64(pduSessionID)},
+					SNSSAI: ngapType.SNSSAI{
+						SST: ngapType.SST{Value: []byte{0x01}},
+					},
+					PDUSessionResourceSetupRequestTransfer: aper.OctetString(transferBytes),
+				},
+			},
+		}
+		req.ProtocolIEs.List = append(req.ProtocolIEs.List, ie)
+	}
+
+	pdu.InitiatingMessage.Value.PDUSessionResourceSetupRequest = &req
+
+	return encodeNGAP(pdu)
+}
+
+// BuildPDUSessionResourceSetupResponse constructs the NGAP response sent by the gNB
+// to the AMF confirming N3 resources are set up. Carries the gNB's DL F-TEID.
+// Ref: TS 38.413 §9.2.1.2
+func BuildPDUSessionResourceSetupResponse(
+	amfUeNgapID, ranUeNgapID int64,
+	gnbAddr string,
+	dlTEID uint32,
+) ([]byte, error) {
+	ipv4 := net.ParseIP(gnbAddr).To4()
+	if ipv4 == nil {
+		return nil, fmt.Errorf("BuildPDUSessionResourceSetupResponse: invalid gNB IP %q", gnbAddr)
+	}
+	teidBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(teidBytes, dlTEID)
+
+	// Build the inner PDUSessionResourceSetupResponseTransfer
+	respTransfer := ngapType.PDUSessionResourceSetupResponseTransfer{
+		DLQosFlowPerTNLInformation: ngapType.QosFlowPerTNLInformation{
+			UPTransportLayerInformation: ngapType.UPTransportLayerInformation{
+				Present: ngapType.UPTransportLayerInformationPresentGTPTunnel,
+				GTPTunnel: &ngapType.GTPTunnel{
+					TransportLayerAddress: ngapType.TransportLayerAddress{
+						Value: aper.BitString{Bytes: ipv4, BitLength: 32},
+					},
+					GTPTEID: ngapType.GTPTEID{Value: teidBytes},
+				},
+			},
+			AssociatedQosFlowList: ngapType.AssociatedQosFlowList{
+				List: []ngapType.AssociatedQosFlowItem{
+					{QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: 1}},
+				},
+			},
+		},
+	}
+
+	transferBytes, err := aper.Marshal(respTransfer)
+	if err != nil {
+		return nil, fmt.Errorf("BuildPDUSessionResourceSetupResponse: marshal transfer: %w", err)
+	}
+
+	// Build outer PDU
+	pdu := ngapType.NGAPPDU{}
+	pdu.Present = ngapType.NGAPPDUPresentSuccessfulOutcome
+	pdu.SuccessfulOutcome = new(ngapType.SuccessfulOutcome)
+	pdu.SuccessfulOutcome.ProcedureCode.Value = ngapType.ProcedureCodePDUSessionResourceSetup
+	pdu.SuccessfulOutcome.Criticality.Value = ngapType.CriticalityPresentReject
+	pdu.SuccessfulOutcome.Value.Present = ngapType.SuccessfulOutcomePresentPDUSessionResourceSetupResponse
+
+	resp := ngapType.PDUSessionResourceSetupResponse{}
+
+	// IE: AMF-UE-NGAP-ID
+	{
+		ie := ngapType.PDUSessionResourceSetupResponseIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDAMFUENGAPID
+		ie.Criticality.Value = ngapType.CriticalityPresentIgnore
+		ie.Value.Present = ngapType.PDUSessionResourceSetupResponseIEsPresentAMFUENGAPID
+		ie.Value.AMFUENGAPID = &ngapType.AMFUENGAPID{Value: amfUeNgapID}
+		resp.ProtocolIEs.List = append(resp.ProtocolIEs.List, ie)
+	}
+
+	// IE: RAN-UE-NGAP-ID
+	{
+		ie := ngapType.PDUSessionResourceSetupResponseIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDRANUENGAPID
+		ie.Criticality.Value = ngapType.CriticalityPresentIgnore
+		ie.Value.Present = ngapType.PDUSessionResourceSetupResponseIEsPresentRANUENGAPID
+		ie.Value.RANUENGAPID = &ngapType.RANUENGAPID{Value: ranUeNgapID}
+		resp.ProtocolIEs.List = append(resp.ProtocolIEs.List, ie)
+	}
+
+	// IE: PDUSessionResourceSetupListSURes
+	{
+		ie := ngapType.PDUSessionResourceSetupResponseIEs{}
+		ie.Id.Value = ngapType.ProtocolIEIDPDUSessionResourceSetupListSURes
+		ie.Criticality.Value = ngapType.CriticalityPresentIgnore
+		ie.Value.Present = ngapType.PDUSessionResourceSetupResponseIEsPresentPDUSessionResourceSetupListSURes
+		ie.Value.PDUSessionResourceSetupListSURes = &ngapType.PDUSessionResourceSetupListSURes{
+			List: []ngapType.PDUSessionResourceSetupItemSURes{
+				{
+					PDUSessionID:                            ngapType.PDUSessionID{Value: 1},
+					PDUSessionResourceSetupResponseTransfer: aper.OctetString(transferBytes),
+				},
+			},
+		}
+		resp.ProtocolIEs.List = append(resp.ProtocolIEs.List, ie)
+	}
+
+	pdu.SuccessfulOutcome.Value.PDUSessionResourceSetupResponse = &resp
+
+	return encodeNGAP(pdu)
+}
+
+// DecodePDUSessionResourceSetupResponse extracts tunnel info from a
+// PDU Session Resource Setup Response sent by the gNB.
+// Returns AMF-UE-NGAP-ID, gNB GTP address ("ip"), and DL TEID.
+//
+// Ref: TS 38.413 §9.2.1.2
+func DecodePDUSessionResourceSetupResponse(pdu *ngapType.NGAPPDU) (
+	amfUeNgapID int64, gnbAddr string, dlTEID uint32, err error,
+) {
+	msg := pdu.SuccessfulOutcome.Value.PDUSessionResourceSetupResponse
+	if msg == nil {
+		err = fmt.Errorf("DecodePDUSessionResourceSetupResponse: PDUSessionResourceSetupResponse is nil")
+		return
+	}
+
+	for _, ie := range msg.ProtocolIEs.List {
+		switch ie.Id.Value {
+		case ngapType.ProtocolIEIDAMFUENGAPID:
+			if ie.Value.AMFUENGAPID != nil {
+				amfUeNgapID = ie.Value.AMFUENGAPID.Value
+			}
+		case ngapType.ProtocolIEIDPDUSessionResourceSetupListSURes:
+			list := ie.Value.PDUSessionResourceSetupListSURes
+			if list == nil || len(list.List) == 0 {
+				continue
+			}
+			item := list.List[0]
+			var transfer ngapType.PDUSessionResourceSetupResponseTransfer
+			if unmarshalErr := aper.Unmarshal(item.PDUSessionResourceSetupResponseTransfer, &transfer); unmarshalErr != nil {
+				err = fmt.Errorf("DecodePDUSessionResourceSetupResponse: unmarshal transfer: %w", unmarshalErr)
+				return
+			}
+			gtpTunnel := transfer.DLQosFlowPerTNLInformation.UPTransportLayerInformation.GTPTunnel
+			if gtpTunnel == nil {
+				err = fmt.Errorf("DecodePDUSessionResourceSetupResponse: GTPTunnel is nil")
+				return
+			}
+			if len(gtpTunnel.TransportLayerAddress.Value.Bytes) < 4 {
+				err = fmt.Errorf("DecodePDUSessionResourceSetupResponse: TransportLayerAddress too short")
+				return
+			}
+			gnbAddr = net.IP(gtpTunnel.TransportLayerAddress.Value.Bytes[:4]).String()
+			if len(gtpTunnel.GTPTEID.Value) < 4 {
+				err = fmt.Errorf("DecodePDUSessionResourceSetupResponse: GTPTEID too short")
+				return
+			}
+			dlTEID = binary.BigEndian.Uint32(gtpTunnel.GTPTEID.Value[:4])
+		}
+	}
+	return
 }

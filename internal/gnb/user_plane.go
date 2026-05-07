@@ -27,7 +27,7 @@ import (
 
 // UserPlane holds the gNB's GTP-U state for one UE session.
 type UserPlane struct {
-	// Tunnel is the local GTP-U UDP socket.
+	// Tunnel is the local GTP-U UDP socket (gNB N3 UPF side).
 	Tunnel *gtp.Tunnel
 
 	// ULTEID is the TEID we send to the UPF on uplink.
@@ -43,6 +43,13 @@ type UserPlane struct {
 
 	// UEIPAddress is the UE's allocated IP.
 	UEIPAddress string
+
+	// UEFacingTunnel is the GTP-U tunnel for UE→gNB uplink packets.
+	// Receives UE uplink, re-encapsulates with UPF UL TEID, forwards to UPF.
+	UEFacingTunnel *gtp.Tunnel
+
+	// ueGTPAddr is the UE's GTP endpoint, learned from the first uplink packet.
+	ueGTPAddr *net.UDPAddr
 }
 
 // SetupUserPlane initialises the gNB's GTP-U tunnel for a UE session.
@@ -67,8 +74,14 @@ func (g *GNB) SetupUserPlane(ueIP string, ulTEID uint32, upfAddrStr string) (*Us
 		return nil, fmt.Errorf("create GTP-U tunnel: %w", err)
 	}
 
-	// Allocate a DL TEID — we tell the UPF to use this for downlink packets
-	dlTEID := tunnel.AllocateTEID()
+	// Use the DL TEID allocated during PDUSessionResourceSetup if available,
+	// otherwise fall back to a tunnel-allocated TEID.
+	g.mu.RLock()
+	dlTEID := g.pendingDLTEID
+	g.mu.RUnlock()
+	if dlTEID == 0 {
+		dlTEID = tunnel.AllocateTEID()
+	}
 
 	// Attach capture hook if hub is configured
 	if g.Hub != nil {
@@ -92,6 +105,36 @@ func (g *GNB) SetupUserPlane(ueIP string, ulTEID uint32, upfAddrStr string) (*Us
 		UEIPAddress: ueIP,
 	}
 
+	// Set up UE-facing GTP-U tunnel (gNB N3 UE side).
+	// The UE sends uplink GTP to this port; gNB relays to UPF.
+	cfg := g.Config()
+	ueTunnel, err := gtp.NewTunnel(cfg.UEGTPPort)
+	if err != nil {
+		// Non-fatal — UE user plane won't work but signalling still functions.
+		fmt.Printf("[gNB] WARNING: UE-facing GTP-U tunnel failed: %v\n", err)
+	} else {
+		up.UEFacingTunnel = ueTunnel
+		// TEID=1 is what the UE sends on its first (and only) PDU session.
+		ueTunnel.RegisterTEID(1, func(_ uint32, src *net.UDPAddr, innerPkt []byte) {
+			// Learn UE GTP address from first packet.
+			if up.ueGTPAddr == nil {
+				up.ueGTPAddr = src
+				fmt.Printf("[gNB] UE GTP endpoint learned: %s\n", src)
+			}
+			// Re-encapsulate and forward to UPF.
+			if err := tunnel.SendGPDU(up.UPFAddr, up.ULTEID, innerPkt); err != nil {
+				fmt.Printf("[gNB] GTP relay UE→UPF error: %v\n", err)
+			}
+		})
+		go ueTunnel.Serve()
+		fmt.Printf("[gNB] UE-facing GTP-U tunnel on port %d\n", cfg.UEGTPPort)
+	}
+
+	// Store the user plane state so handleDownlinkPacket can relay to UE.
+	g.mu.Lock()
+	g.userPlane = up
+	g.mu.Unlock()
+
 	// Notify UPF of our GTP-U address and DL TEID so it can send downlink back.
 	// This is the gNB-side of the PFCP session update.
 	gnbGTPAddr := fmt.Sprintf("127.0.0.1:%d", tunnel.LocalAddr().Port)
@@ -111,7 +154,7 @@ func (g *GNB) SetupUserPlane(ueIP string, ulTEID uint32, upfAddrStr string) (*Us
 
 // handleDownlinkPacket processes an IP packet received from the UPF
 // and delivers it to the UE (logged here since UE is simulated).
-func (g *GNB) handleDownlinkPacket(teid uint32, src *net.UDPAddr, pkt []byte) {
+func (g *GNB) handleDownlinkPacket(teid uint32, _ *net.UDPAddr, pkt []byte) {
 	if len(pkt) < 20 {
 		return
 	}

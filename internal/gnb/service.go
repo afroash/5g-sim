@@ -11,8 +11,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/afroash/5g-sim/internal/nas"
-
 	ngapbuilder "github.com/afroash/5g-sim/internal/ngap"
 	sctpclient "github.com/afroash/5g-sim/internal/sctp"
 	"github.com/free5gc/ngap/ngapType"
@@ -86,11 +84,11 @@ func (g *GNB) Start() error {
 
 	fmt.Println("[gNB] NG Setup complete — gNB is connected to 5G core ✓")
 
-	// Phase 4: trigger a simulated UE registration
-	supi := nas.SUPI("imsi-001010000000001")
-	if err := g.StartUERegistration(supi); err != nil {
-		return fmt.Errorf("UE registration: %w", err)
-	}
+	go func() {
+		if err := g.startUEListener(); err != nil {
+			fmt.Printf("[gNB] UE listener stopped: %v\n", err)
+		}
+	}()
 
 	// Block — keep alive while SCTP read loop handles responses
 	select {}
@@ -120,10 +118,19 @@ func (g *GNB) registerHandlers(d *ngapbuilder.Dispatcher) {
 		g.HandleDownlinkNASTransport,
 	)
 
+	// PDUSessionResourceSetup — AMF asks gNB to set up N3 resources
+	// Ref: TS 38.413 §9.2.1.1
+	d.Register(
+		ngapType.ProcedureCodePDUSessionResourceSetup,
+		ngapType.NGAPPDUPresentInitiatingMessage,
+		g.HandlePDUSessionResourceSetupRequest,
+	)
+
 	fmt.Println("[gNB] Registered NGAP handlers:")
 	fmt.Println("[gNB]   ProcedureCodeNGSetup (SuccessfulOutcome)        → HandleNGSetupResponse")
 	fmt.Println("[gNB]   ProcedureCodeNGSetup (UnsuccessfulOutcome)      → HandleNGSetupFailure")
 	fmt.Println("[gNB]   ProcedureCodeDownlinkNASTransport (Initiating)  → HandleDownlinkNASTransport")
+	fmt.Println("[gNB]   ProcedureCodePDUSessionResourceSetup (Initiating) → HandlePDUSessionResourceSetupRequest")
 }
 
 // sendNGSetupRequest builds and sends the NGSetupRequest to the AMF.

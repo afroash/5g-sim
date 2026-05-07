@@ -55,6 +55,21 @@ topology:
       kind: linux
       image: 5gsim/server-up:latest
 
+    # ----------------------------------------------------------
+    # UE Simulator
+    # Standalone UE binary: connects to gNB on Server B,
+    # runs Registration + PDU Session, sets up TUN interface,
+    # and verifies connectivity through the full 5G data path.
+    #
+    # NET_ADMIN is required for TUN interface creation.
+    # ContainerLab linux nodes get this by default (root mode).
+    # ----------------------------------------------------------
+    ue:
+      kind: linux
+      image: 5gsim/ue:latest
+      exec:
+        - "ip link set dev eth1 up"
+
   # ============================================================
   # Links
   # Point-to-point /30 subnets on every fabric link.
@@ -96,3 +111,10 @@ topology:
     # Subnet: 10.0.2.12/30
     - endpoints: ["leaf2:Ethernet0/3", "server-b:eth2"]
       ipv4: ["10.0.2.13/30", "10.0.2.14/30"]
+
+    # --- Leaf1 <-> UE ---
+    # Subnet: 10.0.2.16/30
+    # UE connects to leaf1 — same fabric as Server B.
+    # Traffic path: UE eth1 → leaf1 → Server B (10.1.1.1) via OSPF.
+    - endpoints: ["leaf1:Ethernet1/0", "ue:eth1"]
+      ipv4: ["10.0.2.17/30", "10.0.2.18/30"]

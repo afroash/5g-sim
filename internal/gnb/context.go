@@ -40,6 +40,15 @@ type Config struct {
 	// AMFPort is the SCTP port of the AMF. Default: 38412.
 	AMFPort int `yaml:"amf_port"`
 
+	// GTPAddress is the IP the gNB uses for its N3 GTP-U endpoint.
+	GTPAddress string `yaml:"gtp_address"`
+
+	// UEPort is the SCTP port for accepting UE connections. Default: 38413.
+	UEPort int `yaml:"ue_port"`
+
+	// UEGTPPort is the UDP port for the UE-facing GTP-U tunnel. Default: 2153.
+	UEGTPPort int `yaml:"ue_gtp_port"`
+
 	// Hub is the optional observability hub for packet capture.
 	Hub *obs.Hub `yaml:"-"`
 }
@@ -54,6 +63,9 @@ func DefaultConfig() Config {
 		TAC:         0x000001,
 		AMFAddress:  "127.0.0.1",
 		AMFPort:     38412,
+		GTPAddress:  "127.0.0.1",
+		UEPort:      38413,
+		UEGTPPort:   2153,
 	}
 }
 
@@ -108,6 +120,19 @@ type GNB struct {
 	// Populated from the SMF session response, passed via the AMF.
 	pendingUPFAddr string
 
+	// pendingDLTEID is the DL TEID allocated in HandlePDUSessionResourceSetupRequest
+	// and used when the GTP tunnel is set up.
+	pendingDLTEID uint32
+
+	// nextDLTEID is the DL TEID allocation counter.
+	nextDLTEID uint32
+
+	// uesByRanID tracks UE relay contexts by RAN-UE-NGAP-ID. Used in Part B.
+	uesByRanID map[int64]*UERelayContext
+
+	// userPlane holds the active GTP-U state after PDU session establishment.
+	userPlane *UserPlane
+
 	// Hub is the observability hub (nil if not configured).
 	Hub *obs.Hub
 }
@@ -115,10 +140,22 @@ type GNB struct {
 // New creates a new gNB instance ready to connect to the AMF.
 func New(cfg Config) *GNB {
 	return &GNB{
-		config:    cfg,
-		setupDone: make(chan struct{}),
-		Hub:       cfg.Hub,
+		config:     cfg,
+		setupDone:  make(chan struct{}),
+		Hub:        cfg.Hub,
+		nextDLTEID: 1,
+		uesByRanID: make(map[int64]*UERelayContext),
 	}
+}
+
+// allocateDLTEID atomically reserves and returns the next DL TEID.
+// Ref: TS 29.281 §5.1 — TEID allocation
+func (g *GNB) allocateDLTEID() uint32 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	teid := g.nextDLTEID
+	g.nextDLTEID++
+	return teid
 }
 
 // SetConn stores the SCTP connection to the AMF.
@@ -190,4 +227,13 @@ func (g *GNB) Send(data []byte) error {
 // Config returns the gNB's configuration.
 func (g *GNB) Config() Config {
 	return g.config
+}
+
+// UERelayContext tracks a UE connected to the gNB via SCTP.
+// Populated in ue_relay.go (Part B).
+type UERelayContext struct {
+	Conn        net.Conn
+	RanUeNgapID int64
+	AMFUeNgapID int64
+	FirstMsg    bool
 }

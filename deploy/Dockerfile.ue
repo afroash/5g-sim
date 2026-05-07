@@ -1,0 +1,44 @@
+# ============================================================
+# UE Simulator Container
+# Standalone UE binary: connects to gNB, registers, sets up
+# a TUN interface, and tests the full data path.
+#
+# Requires NET_ADMIN capability for TUN interface creation.
+# ContainerLab linux nodes get this by default when run as root.
+#
+# Build context: repo root
+#   docker build -t 5gsim/ue:latest -f deploy/Dockerfile.ue .
+# ============================================================
+
+# ── Stage 1: Build Go binary ────────────────────────────────
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/ue ./cmd/ue
+
+# ── Stage 2: Runtime image ──────────────────────────────────
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    iproute2 \
+    iputils-ping \
+    curl \
+    iperf3 \
+    traceroute \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/ue /usr/local/bin/ue
+
+RUN mkdir -p /etc/5g-sim /var/log
+COPY deploy/configs/nfs/ue.yaml /etc/5g-sim/ue.yaml
+COPY deploy/servers/entrypoint-ue.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

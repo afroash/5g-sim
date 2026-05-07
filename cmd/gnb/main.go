@@ -21,7 +21,7 @@ import (
 
 func main() {
 	fmt.Println("╔══════════════════════════════════╗")
-	fmt.Println("║       5g-sim gNB starting        ║")
+	fmt.Println("║       5g-sim gNB starting1       ║")
 	fmt.Println("╚══════════════════════════════════╝")
 
 	var configPath string

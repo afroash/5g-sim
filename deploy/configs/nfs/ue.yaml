@@ -1,0 +1,8 @@
+supi: "imsi-001010000000001"
+gnb_address: "10.1.1.1"
+gnb_sctp_port: 38413
+gnb_gtp_address: "10.1.1.1:2153"
+dnn: "internet"
+slice:
+  sst: 1
+  sd: "000001"

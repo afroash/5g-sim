@@ -63,6 +63,14 @@ type UEContext struct {
 	// ULTEID is the TEID the gNB should use for uplink GTP-U packets.
 	ULTEID uint32
 
+	// PendingNASAccept holds the NAS PDU Session Establishment Accept waiting to be
+	// sent after the gNB confirms N3 resources via PDUSessionResourceSetupResponse.
+	// Ref: TS 23.502 §4.3.2.2.2 step 10
+	PendingNASAccept []byte
+
+	// PendingPDUSessionID is the session ID for the pending NAS Accept.
+	PendingPDUSessionID uint8
+
 	// RegisteredAt is when this UE completed registration.
 	RegisteredAt time.Time
 }

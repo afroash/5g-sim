@@ -14,9 +14,11 @@ import (
 	"fmt"
 	"net"
 
+	ngapbuilder "github.com/afroash/5g-sim/internal/ngap"
 	"github.com/afroash/5g-sim/internal/nas"
 	"github.com/afroash/5g-sim/internal/smf"
 	"github.com/afroash/5g-sim/pkg/seqdiag"
+	"github.com/free5gc/ngap/ngapType"
 )
 
 // HandlePDUSessionEstablishmentRequest processes a NAS PDU Session
@@ -116,21 +118,85 @@ func (a *AMF) HandlePDUSessionEstablishmentRequest(conn net.Conn, ue *UEContext,
 		allocatedIP,
 		dnn,
 	)
-	_ = ulTEID
-	_ = upfAddr
 
-	// Step 3: Deliver to UE via NGAP DL NAS Transport
-	a.sendPDUSessionNASToUE(conn, ue, req.PDUSessionID, nasAccept)
+	ue.PendingNASAccept = nasAccept
+	ue.PendingPDUSessionID = req.PDUSessionID
+	if sendErr := a.sendPDUSessionResourceSetupRequest(conn, ue, ulTEID, upfAddr); sendErr != nil {
+		fmt.Printf("[AMF]   N2 resource setup failed: %v — sending NAS accept directly\n", sendErr)
+		ue.PendingNASAccept = nil
+		a.sendPDUSessionNASToUE(conn, ue, req.PDUSessionID, nasAccept)
+	}
 
-	fmt.Printf("[AMF]   PDU Session established: UE=%s IP=%s ✓\n",
-		ue.SUPI, allocatedIP)
 	if a.Hub != nil {
 		a.Hub.Procedure(seqdiag.NodeSMF, seqdiag.NodeAMF,
 			"201 Created (IP allocated)", "TS 29.502 §6.1.6.3.2",
 			"ip", allocatedIP)
 		a.Hub.Procedure(seqdiag.NodeAMF, seqdiag.NodeGNB,
+			"PDUSessionResourceSetupRequest", "TS 38.413 §9.2.1.1",
+			"upf", upfAddr, "ul_teid", fmt.Sprintf("0x%08X", ulTEID))
+	}
+}
+
+// sendPDUSessionResourceSetupRequest sends NGAP PDU Session Resource Setup Request
+// to the gNB with the UPF F-TEID so it can set up its N3 GTP-U endpoint.
+// Ref: TS 38.413 §9.2.1.1
+func (a *AMF) sendPDUSessionResourceSetupRequest(
+	conn net.Conn, ue *UEContext, ulTEID uint32, upfAddr string,
+) error {
+	data, err := ngapbuilder.BuildPDUSessionResourceSetupRequest(
+		ue.AMFUeNgapID, 1, ue.PendingPDUSessionID, upfAddr, ulTEID,
+	)
+	if err != nil {
+		return fmt.Errorf("amf: build PDUSessionResourceSetupRequest: %w", err)
+	}
+	if err := a.sendNGAP(conn, data); err != nil {
+		return fmt.Errorf("amf: send PDUSessionResourceSetupRequest: %w", err)
+	}
+	fmt.Printf("[AMF]   PDUSessionResourceSetupRequest sent to gNB (UPF=%s UL-TEID=0x%08X)\n",
+		upfAddr, ulTEID)
+	return nil
+}
+
+// HandlePDUSessionResourceSetupResponse processes the gNB's N3 resource setup confirmation.
+// Extracts the gNB DL F-TEID, then delivers the deferred NAS PDU Session Accept to the UE.
+// Ref: TS 38.413 §9.2.1.2
+func (a *AMF) HandlePDUSessionResourceSetupResponse(conn net.Conn, pdu *ngapType.NGAPPDU) {
+	fmt.Println("[AMF] Received PDUSessionResourceSetupResponse from gNB")
+
+	amfUeNgapID, gnbAddr, dlTEID, err := ngapbuilder.DecodePDUSessionResourceSetupResponse(pdu)
+	if err != nil {
+		fmt.Printf("[AMF]   Decode failed: %v\n", err)
+		return
+	}
+
+	fmt.Printf("[AMF]   gNB DL tunnel: addr=%s DL-TEID=0x%08X\n", gnbAddr, dlTEID)
+
+	ue, ok := a.ues.GetByNgapID(amfUeNgapID)
+	if !ok {
+		fmt.Printf("[AMF]   No UE context for AMF-UE-NGAP-ID=%d\n", amfUeNgapID)
+		return
+	}
+
+	nasAccept := ue.PendingNASAccept
+	pduSessionID := ue.PendingPDUSessionID
+	ue.PendingNASAccept = nil
+
+	if nasAccept == nil {
+		fmt.Println("[AMF]   No pending NAS Accept — ignoring")
+		return
+	}
+
+	a.sendPDUSessionNASToUE(conn, ue, pduSessionID, nasAccept)
+	fmt.Printf("[AMF]   PDU Session complete: UE=%s IP=%s gNB-DL-TEID=0x%08X ✓\n",
+		ue.SUPI, ue.AllocatedIP, dlTEID)
+
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
+			"PDUSessionResourceSetupResponse", "TS 38.413 §9.2.1.2",
+			"dl_teid", fmt.Sprintf("0x%08X", dlTEID))
+		a.Hub.Procedure(seqdiag.NodeAMF, seqdiag.NodeGNB,
 			"DownlinkNASTransport (PDU Session Estab Accept)", "TS 38.413 §9.2.5.2",
-			"ip", allocatedIP)
+			"ip", ue.AllocatedIP)
 	}
 }
 

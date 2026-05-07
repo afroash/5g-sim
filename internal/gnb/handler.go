@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/free5gc/ngap/ngapType"
+
+	"github.com/afroash/5g-sim/internal/nas"
 )
 
 // HandleNGSetupResponse processes the NGSetupResponse from the AMF.
@@ -131,6 +133,64 @@ func (g *GNB) HandleNGSetupFailure(_ net.Conn, pdu *ngapType.NGAPPDU) {
 			}
 		}
 	}
+}
+
+// HandleDownlinkNASTransport processes a NAS message from the AMF destined for a UE.
+// If a UE relay context exists for the RAN-UE-NGAP-ID, the NAS payload is forwarded
+// directly to the UE's SCTP connection. Otherwise it is decoded locally (legacy path
+// for tests without a standalone UE binary).
+// Ref: TS 38.413 §9.2.5.2
+func (g *GNB) HandleDownlinkNASTransport(conn net.Conn, pdu *ngapType.NGAPPDU) {
+	fmt.Println("[gNB] Received DownlinkNASTransport from AMF")
+
+	msg := pdu.InitiatingMessage.Value.DownlinkNASTransport
+	if msg == nil {
+		return
+	}
+
+	var (
+		amfUeNgapID int64
+		ranUeNgapID int64
+		nasPayload  []byte
+	)
+
+	for _, ie := range msg.ProtocolIEs.List {
+		switch ie.Id.Value {
+		case ngapType.ProtocolIEIDAMFUENGAPID:
+			if ie.Value.AMFUENGAPID != nil {
+				amfUeNgapID = ie.Value.AMFUENGAPID.Value
+			}
+		case ngapType.ProtocolIEIDRANUENGAPID:
+			if ie.Value.RANUENGAPID != nil {
+				ranUeNgapID = ie.Value.RANUENGAPID.Value
+			}
+		case ngapType.ProtocolIEIDNASPDU:
+			if ie.Value.NASPDU != nil {
+				nasPayload = ie.Value.NASPDU.Value
+			}
+		}
+	}
+
+	fmt.Printf("[gNB]   AMF-UE-NGAP-ID=%d RAN-UE-NGAP-ID=%d NAS=%d bytes\n",
+		amfUeNgapID, ranUeNgapID, len(nasPayload))
+
+	// Relay to standalone UE binary if one is connected.
+	g.mu.RLock()
+	_, hasUE := g.uesByRanID[ranUeNgapID]
+	g.mu.RUnlock()
+
+	if hasUE {
+		g.relayDownlinkNAS(ranUeNgapID, amfUeNgapID, nasPayload)
+		return
+	}
+
+	// Legacy path: no UE binary — decode NAS locally.
+	nasMsg, err := nas.Decode(nasPayload)
+	if err != nil {
+		fmt.Printf("[gNB]   NAS decode error: %v\n", err)
+		return
+	}
+	fmt.Printf("[gNB]   NAS message type: 0x%02X (no UE connected — dropping)\n", nasMsg.MessageType)
 }
 
 // decodePLMN reverses the BCD encoding back into a readable PLMN string.

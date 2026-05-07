@@ -12,6 +12,7 @@ require (
 require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
 	github.com/tim-ywliu/nested-logrus-formatter v1.3.2 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 )

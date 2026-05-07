@@ -4,3 +4,6 @@ plmn: "00101"
 tac: 0x000001
 amf_address: "10.1.0.1"
 amf_port: 38412
+gtp_address: "10.1.1.1"
+ue_port: 38413
+ue_gtp_port: 2153

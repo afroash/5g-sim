@@ -98,10 +98,19 @@ func (a *AMF) registerHandlers(d *ngapdispatcher.Dispatcher) {
 		a.HandleUplinkNASTransport,
 	)
 
+	// PDU Session Resource Setup — gNB confirms N3 resources
+	// Ref: TS 38.413 §9.2.1
+	d.Register(
+		ngapType.ProcedureCodePDUSessionResourceSetup,
+		ngapType.NGAPPDUPresentSuccessfulOutcome,
+		a.HandlePDUSessionResourceSetupResponse,
+	)
+
 	fmt.Println("[AMF] Registered NGAP handlers:")
 	fmt.Println("[AMF]   ProcedureCodeNGSetup (InitiatingMessage)          → HandleNGSetupRequest")
 	fmt.Println("[AMF]   ProcedureCodeInitialUEMessage (InitiatingMessage) → HandleInitialUEMessage")
 	fmt.Println("[AMF]   ProcedureCodeUplinkNASTransport (InitiatingMessage) → HandleUplinkNASTransport")
+	fmt.Println("[AMF]   ProcedureCodePDUSessionResourceSetup (SuccessfulOutcome) → HandlePDUSessionResourceSetupResponse")
 }
 
 // sendNGAP writes a raw NGAP PDU to the given connection and captures
