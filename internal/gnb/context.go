@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/afroash/5g-sim/internal/gtp"
 	"github.com/afroash/5g-sim/pkg/obs"
 )
 
@@ -47,7 +48,14 @@ type Config struct {
 	UEPort int `yaml:"ue_port"`
 
 	// UEGTPPort is the UDP port for the UE-facing GTP-U tunnel. Default: 2153.
+	// gNB binds this socket to receive uplink GTP-U from the UE.
+	// Ref: TS 29.281 §4.4.2
 	UEGTPPort int `yaml:"ue_gtp_port"`
+
+	// UPFGTPPort is the UDP port the UPF listens on for GTP-U. Default: 2152.
+	// Used as the destination port when re-encapsulating UE uplink toward the UPF.
+	// Ref: TS 29.281 §4.4.2
+	UPFGTPPort int `yaml:"upf_gtp_port"`
 
 	// Hub is the optional observability hub for packet capture.
 	Hub *obs.Hub `yaml:"-"`
@@ -66,6 +74,7 @@ func DefaultConfig() Config {
 		GTPAddress:  "127.0.0.1",
 		UEPort:      38413,
 		UEGTPPort:   2153,
+		UPFGTPPort:  2152,
 	}
 }
 
@@ -133,6 +142,19 @@ type GNB struct {
 	// userPlane holds the active GTP-U state after PDU session establishment.
 	userPlane *UserPlane
 
+	// ueRelay is the gNB's UE-facing GTP-U listener (default port 2153).
+	// Started once at boot; demuxes UE uplink across all PDU sessions by
+	// inner src IP and relays to the appropriate UPF endpoint.
+	// Ref: TS 29.281 §5.1 — G-PDU forwarding
+	ueRelay *gtp.Tunnel
+
+	// ueSessions maps RAN-UE-NGAP-ID to its tunnel state. Populated when
+	// HandlePDUSessionResourceSetupRequest calls SetupUserPlane (the gNB
+	// always knows the RAN-UE-NGAP-ID at that point, but does not yet know
+	// the UE's allocated IP — that's learned lazily from the inner src IP
+	// of the first uplink GTP-U packet).
+	ueSessions map[int64]*UETunnelSession
+
 	// Hub is the observability hub (nil if not configured).
 	Hub *obs.Hub
 }
@@ -145,6 +167,7 @@ func New(cfg Config) *GNB {
 		Hub:        cfg.Hub,
 		nextDLTEID: 1,
 		uesByRanID: make(map[int64]*UERelayContext),
+		ueSessions: make(map[int64]*UETunnelSession),
 	}
 }
 
@@ -236,4 +259,52 @@ type UERelayContext struct {
 	RanUeNgapID int64
 	AMFUeNgapID int64
 	FirstMsg    bool
+}
+
+// UETunnelSession holds per-UE GTP-U state used by the gNB relay.
+//
+// One entry per active PDU session, keyed by RanUeNgapID in g.ueSessions.
+// The relay reads it on every uplink packet (to find the UL TEID + UPF
+// address to forward to) and on every downlink packet (to find the UE's
+// return UDP address + DL TEID).
+//
+// Ref: TS 29.281 §5.1 — G-PDU forwarding
+// Ref: TS 38.401 §8.3 — UE-associated logical NG-connection
+type UETunnelSession struct {
+	// RanUeNgapID identifies the UE on the N2 interface.
+	// Always known to the gNB at PDU Session Resource Setup time.
+	// Ref: TS 38.413 §9.3.3.2
+	RanUeNgapID int64
+
+	// UEIP is the IP allocated to the UE by the SMF (e.g. 10.45.0.2).
+	// Empty until the first uplink packet arrives — the gNB does not see
+	// the UE IP in N2 (it lives inside the NAS PDU Session Establishment
+	// Accept which the gNB relays opaquely). The UE-facing relay learns
+	// it from the inner IPv4 source on first uplink and stores it here.
+	UEIP string
+
+	// UESrcAddr is the UE's UDP source address, learned from the first
+	// uplink GTP-U packet. Downlink packets are sent back here.
+	// nil until the first uplink arrives.
+	UESrcAddr *net.UDPAddr
+
+	// ULTEID is the UPF-allocated TEID the gNB uses on uplink (gNB → UPF).
+	// Provided via N2 PDU Session Resource Setup (UL NG-U UP TNL Information).
+	// Ref: TS 38.413 §9.3.1.9
+	ULTEID uint32
+
+	// DLTEID is the gNB-allocated TEID announced to the UPF for downlink
+	// (UPF → gNB), and re-used as the TEID toward the UE in this simulator.
+	// TODO: split into separate gNB-facing and UE-facing DL TEIDs once the
+	// UE simulator supports per-session TEIDs (currently hardcoded to 1).
+	DLTEID uint32
+
+	// UPFAddr is the UPF's GTP-U endpoint (ip:port) for the uplink direction.
+	UPFAddr *net.UDPAddr
+
+	// upfTunnel is the per-session local socket the gNB uses to talk to the
+	// UPF. Bound to a random OS-assigned port in SetupUserPlane so it can
+	// coexist with the UPF on the same host. Receives downlink G-PDUs from
+	// the UPF on this socket; sends uplink to UPFAddr from it.
+	upfTunnel *gtp.Tunnel
 }

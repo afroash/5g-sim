@@ -66,7 +66,7 @@ func (g *GNB) HandlePDUSessionResourceSetupRequest(conn net.Conn, pdu *ngapType.
 
 			g.mu.Lock()
 			g.pendingULTEID = ulTEID
-			g.pendingUPFAddr = fmt.Sprintf("%s:2152", upfAddr)
+			g.pendingUPFAddr = fmt.Sprintf("%s:%d", upfAddr, g.config.UPFGTPPort)
 			g.mu.Unlock()
 
 			fmt.Printf("[gNB]   UPF F-TEID stored: addr=%s UL-TEID=0x%08X\n", upfAddr, ulTEID)
@@ -76,10 +76,36 @@ func (g *GNB) HandlePDUSessionResourceSetupRequest(conn net.Conn, pdu *ngapType.
 	dlTEID := g.allocateDLTEID()
 	cfg := g.Config()
 
+	// Persist the DL TEID so the user-plane setup uses the same value we
+	// just announced to the AMF (and through it, to the UPF).
+	g.mu.Lock()
+	g.pendingDLTEID = dlTEID
+	g.mu.Unlock()
+
 	fmt.Printf("[gNB]   Allocated DL-TEID=0x%08X gNB-GTP=%s\n", dlTEID, cfg.GTPAddress)
 
 	if err := g.sendPDUSessionResourceSetupResponse(conn, amfUeNgapID, ranUeNgapID, cfg.GTPAddress, dlTEID); err != nil {
 		fmt.Printf("[gNB]   Failed to send PDUSessionResourceSetupResponse: %v\n", err)
+		return
+	}
+
+	// Build the per-session user plane: opens the UPF-facing GTP-U socket,
+	// registers the DL handler, and adds the session to g.ueSessions so the
+	// UE-facing relay can forward uplink to the UPF.
+	// Ref: TS 23.502 §4.3.2.2.2 — AN specific resource setup
+	g.mu.RLock()
+	ulTEID := g.pendingULTEID
+	upfAddr := g.pendingUPFAddr
+	g.mu.RUnlock()
+
+	if ulTEID == 0 || upfAddr == "" {
+		fmt.Printf("[gNB]   SetupUserPlane skipped — missing UL TEID or UPF addr (UL=0x%08X UPF=%q)\n",
+			ulTEID, upfAddr)
+		return
+	}
+
+	if _, err := g.SetupUserPlane(ranUeNgapID, ulTEID, upfAddr, dlTEID); err != nil {
+		fmt.Printf("[gNB]   SetupUserPlane failed: %v\n", err)
 	}
 }
 

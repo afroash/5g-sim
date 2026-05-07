@@ -84,6 +84,14 @@ func (g *GNB) Start() error {
 
 	fmt.Println("[gNB] NG Setup complete — gNB is connected to 5G core ✓")
 
+	// Bind the UE-facing GTP-U socket before the first UE shows up so it
+	// can immediately push uplink data once its PDU session is established.
+	// The UPF-facing tunnel is created per-session in SetupUserPlane.
+	// Ref: TS 29.281 §4.4.2 — UDP/IP based transport
+	if err := g.startUEGTPRelay(cfg.UEGTPPort); err != nil {
+		return fmt.Errorf("gnb: relay: start UE-facing GTP-U: %w", err)
+	}
+
 	go func() {
 		if err := g.startUEListener(); err != nil {
 			fmt.Printf("[gNB] UE listener stopped: %v\n", err)

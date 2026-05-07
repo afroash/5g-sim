@@ -26,6 +26,12 @@ import (
 )
 
 // UserPlane holds the gNB's GTP-U state for one UE session.
+//
+// In the relay-based model, the UE-facing socket is shared across all UEs
+// (g.ueRelay, started at boot). The UPF-facing socket is per-session and
+// lives here on Tunnel — it must be a distinct local port from the UPF's
+// own socket because gNB and UPF can share a network namespace in the
+// simulator's local-host deploy.
 type UserPlane struct {
 	// Tunnel is the local GTP-U UDP socket (gNB N3 UPF side).
 	Tunnel *gtp.Tunnel
@@ -43,24 +49,29 @@ type UserPlane struct {
 
 	// UEIPAddress is the UE's allocated IP.
 	UEIPAddress string
-
-	// UEFacingTunnel is the GTP-U tunnel for UE→gNB uplink packets.
-	// Receives UE uplink, re-encapsulates with UPF UL TEID, forwards to UPF.
-	UEFacingTunnel *gtp.Tunnel
-
-	// ueGTPAddr is the UE's GTP endpoint, learned from the first uplink packet.
-	ueGTPAddr *net.UDPAddr
 }
 
-// SetupUserPlane initialises the gNB's GTP-U tunnel for a UE session.
-// Called after PDU Session Establishment Accept is received.
+// SetupUserPlane initialises the gNB's user plane state for one PDU session:
+//
+//   - Opens a per-session UPF-facing GTP-U socket on a random local port
+//     (must differ from the UPF's own :2152 because they may share a netns).
+//   - Registers the DL-TEID handler that decapsulates UPF→gNB G-PDUs and
+//     hands them to the UE-facing relay.
+//   - Records the session in g.ueSessions so the UE-facing relay can
+//     demux uplinks back to it.
+//   - Tells the UPF (via PFCP-sim) where to send downlink packets.
+//
+// Called from HandlePDUSessionResourceSetupRequest as soon as the UL TEID,
+// UPF address and DL TEID are known. The UE IP is *not* known at this
+// point — it lives inside the NAS PDU Session Establishment Accept and
+// is learned lazily on first uplink (see resolveSessionForUplink).
 //
 // Ref: TS 23.502 §4.3.2.2.2 — AN specific resource setup
-func (g *GNB) SetupUserPlane(ueIP string, ulTEID uint32, upfAddrStr string) (*UserPlane, error) {
-	// Parse UPF address
+// Ref: TS 29.281 §5.1       — G-PDU forwarding
+func (g *GNB) SetupUserPlane(ranUeNgapID int64, ulTEID uint32, upfAddrStr string, dlTEID uint32) (*UserPlane, error) {
+	// Parse UPF address ("host:port" or just "host").
 	host, portStr, err := net.SplitHostPort(upfAddrStr)
 	if err != nil {
-		// If no port given, assume default GTP-U port
 		host = upfAddrStr
 		portStr = fmt.Sprintf("%d", gtp.GTPUPort)
 	}
@@ -68,33 +79,20 @@ func (g *GNB) SetupUserPlane(ueIP string, ulTEID uint32, upfAddrStr string) (*Us
 	fmt.Sscanf(portStr, "%d", &port)
 	upfAddr := &net.UDPAddr{IP: net.ParseIP(host), Port: port}
 
-	// Create local GTP-U tunnel (OS-assigned port for gNB)
+	// Per-session UPF-facing socket. Random local port so it can coexist
+	// with the UPF on the same host.
 	tunnel, err := gtp.NewTunnel(0)
 	if err != nil {
-		return nil, fmt.Errorf("create GTP-U tunnel: %w", err)
+		return nil, fmt.Errorf("gnb: relay: create UPF-facing GTP-U tunnel: %w", err)
 	}
 
-	// Use the DL TEID allocated during PDUSessionResourceSetup if available,
-	// otherwise fall back to a tunnel-allocated TEID.
-	g.mu.RLock()
-	dlTEID := g.pendingDLTEID
-	g.mu.RUnlock()
-	if dlTEID == 0 {
-		dlTEID = tunnel.AllocateTEID()
-	}
-
-	// Attach capture hook if hub is configured
 	if g.Hub != nil {
 		tunnel.Capture = g.Hub.MakeCaptureFunc("gNB", "UPF")
-		fmt.Println("[gNB] GTP-U packet capture enabled")
 	}
 
-	// Register handler for downlink packets from UPF
-	tunnel.RegisterTEID(dlTEID, func(teid uint32, src *net.UDPAddr, innerPkt []byte) {
-		g.handleDownlinkPacket(teid, src, innerPkt)
-	})
-
-	// Start serving in background
+	// Downlink: UPF sends G-PDUs with this TEID; handleDownlinkPacket
+	// finds the session and forwards to the UE on g.ueRelay.
+	tunnel.RegisterTEID(dlTEID, g.handleDownlinkPacket)
 	go tunnel.Serve()
 
 	up := &UserPlane{
@@ -102,58 +100,50 @@ func (g *GNB) SetupUserPlane(ueIP string, ulTEID uint32, upfAddrStr string) (*Us
 		ULTEID:      ulTEID,
 		DLTEID:      dlTEID,
 		UPFAddr:     upfAddr,
-		UEIPAddress: ueIP,
+		UEIPAddress: "", // learned later, see resolveSessionForUplink
 	}
 
-	// Set up UE-facing GTP-U tunnel (gNB N3 UE side).
-	// The UE sends uplink GTP to this port; gNB relays to UPF.
-	cfg := g.Config()
-	ueTunnel, err := gtp.NewTunnel(cfg.UEGTPPort)
-	if err != nil {
-		// Non-fatal — UE user plane won't work but signalling still functions.
-		fmt.Printf("[gNB] WARNING: UE-facing GTP-U tunnel failed: %v\n", err)
-	} else {
-		up.UEFacingTunnel = ueTunnel
-		// TEID=1 is what the UE sends on its first (and only) PDU session.
-		ueTunnel.RegisterTEID(1, func(_ uint32, src *net.UDPAddr, innerPkt []byte) {
-			// Learn UE GTP address from first packet.
-			if up.ueGTPAddr == nil {
-				up.ueGTPAddr = src
-				fmt.Printf("[gNB] UE GTP endpoint learned: %s\n", src)
-			}
-			// Re-encapsulate and forward to UPF.
-			if err := tunnel.SendGPDU(up.UPFAddr, up.ULTEID, innerPkt); err != nil {
-				fmt.Printf("[gNB] GTP relay UE→UPF error: %v\n", err)
-			}
-		})
-		go ueTunnel.Serve()
-		fmt.Printf("[gNB] UE-facing GTP-U tunnel on port %d\n", cfg.UEGTPPort)
-	}
+	// Register with the UE-facing relay. UEIP is intentionally empty here;
+	// the relay binds it on first uplink.
+	g.registerUESession(&UETunnelSession{
+		RanUeNgapID: ranUeNgapID,
+		ULTEID:      ulTEID,
+		DLTEID:      dlTEID,
+		UPFAddr:     upfAddr,
+		upfTunnel:   tunnel,
+	})
 
-	// Store the user plane state so handleDownlinkPacket can relay to UE.
 	g.mu.Lock()
 	g.userPlane = up
 	g.mu.Unlock()
 
-	// Notify UPF of our GTP-U address and DL TEID so it can send downlink back.
-	// This is the gNB-side of the PFCP session update.
+	// PFCP-sim notify: tell the UPF our gNB-side GTP-U source addr/port
+	// so it knows where to send downlink replies. The IP is loopback in
+	// the local-host deploy because gNB+UPF share the netns.
 	gnbGTPAddr := fmt.Sprintf("127.0.0.1:%d", tunnel.LocalAddr().Port)
 	if err := notifyUPFOfGNBTunnel(ulTEID, dlTEID, gnbGTPAddr); err != nil {
 		fmt.Printf("[gNB] PFCP update to UPF failed: %v\n", err)
-		// Non-fatal — uplink still works, downlink may not
 	}
 
 	fmt.Printf("[gNB] User plane established:\n")
-	fmt.Printf("[gNB]   UE IP:   %s\n", ueIP)
-	fmt.Printf("[gNB]   UPF:     %s\n", upfAddr)
-	fmt.Printf("[gNB]   UL TEID: 0x%08X (send to UPF)\n", ulTEID)
-	fmt.Printf("[gNB]   DL TEID: 0x%08X (UPF sends to us)\n", dlTEID)
+	fmt.Printf("[gNB]   RAN-UE-NGAP-ID: %d\n", ranUeNgapID)
+	fmt.Printf("[gNB]   UPF:            %s\n", upfAddr)
+	fmt.Printf("[gNB]   UL TEID:        0x%08X (gNB → UPF)\n", ulTEID)
+	fmt.Printf("[gNB]   DL TEID:        0x%08X (UPF → gNB)\n", dlTEID)
+	fmt.Printf("[gNB]   gNB GTP-U:      %s\n", gnbGTPAddr)
 
 	return up, nil
 }
 
-// handleDownlinkPacket processes an IP packet received from the UPF
-// and delivers it to the UE (logged here since UE is simulated).
+// handleDownlinkPacket processes an inner IP packet received from the UPF
+// on a per-session UPF-facing tunnel and relays it to the UE.
+//
+// Called from the closure registered in SetupUserPlane against the
+// session's DL TEID. It looks the session up by DL TEID (so that this
+// path also works if the gNB hosts multiple PDU sessions) and hands off
+// to relayDownlinkToUE in ue_gtp_relay.go.
+//
+// Ref: TS 29.281 §5.1 — G-PDU forwarding
 func (g *GNB) handleDownlinkPacket(teid uint32, _ *net.UDPAddr, pkt []byte) {
 	if len(pkt) < 20 {
 		return
@@ -167,13 +157,21 @@ func (g *GNB) handleDownlinkPacket(teid uint32, _ *net.UDPAddr, pkt []byte) {
 		protoName = fmt.Sprintf("proto=%d", protocol)
 	}
 
-	fmt.Printf("[gNB] ▼ Downlink: %s → %s (%s) %d bytes via TEID=0x%08X\n",
+	fmt.Printf("[gNB] ▼ Downlink from UPF: %s → %s (%s) %d bytes via DL-TEID=0x%08X\n",
 		srcIP, dstIP, protoName, len(pkt), teid)
 
-	// Check for ICMP echo reply
+	// Surface ICMP echo replies for the simulator's built-in ping test.
 	if protocol == 0x01 && len(pkt) >= 28 && pkt[20] == 0x00 {
-		fmt.Printf("[gNB] ✓ UE received ICMP echo reply from %s — user plane working!\n", srcIP)
+		fmt.Printf("[gNB] ✓ ICMP echo reply from %s — UPF→gNB leg working\n", srcIP)
 	}
+
+	// Relay the inner packet to the UE on the UE-facing socket.
+	session := g.lookupUESessionByDLTEID(teid)
+	if session == nil {
+		fmt.Printf("[gNB] relay: DL dropped — no session for DL-TEID=0x%08X\n", teid)
+		return
+	}
+	g.relayDownlinkToUE(session, pkt)
 }
 
 // SendPing sends a simulated ICMP echo request from the UE through the GTP tunnel.
