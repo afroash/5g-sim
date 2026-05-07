@@ -67,8 +67,6 @@ topology:
     ue:
       kind: linux
       image: 5gsim/ue:latest
-      exec:
-        - "ip link set dev eth1 up"
 
   # ============================================================
   # Links
