@@ -197,7 +197,13 @@ go get github.com/ishidawataru/sctp   # SCTP transport
 
 ---
 
-## Running
+## ContainerLab deploy (full fabric + internet-sim)
+
+For the **end-to-end lab** (Cisco IOL, OSPF, UE → **`10.100.0.1`** HTTP target), see **[deploy/README.md](deploy/README.md)**. It documents how **GTP-U**, the **UPF N6 TUN** (`upf-n6`), and a **post-up vtysh hook** on server-b advertise **`10.45.0.0/24`** so return traffic from **internet-sim** follows the fabric back to the UPF.
+
+---
+
+## Running (local dev — processes only)
 
 ```bash
 # Terminal 1 - Start NRF
