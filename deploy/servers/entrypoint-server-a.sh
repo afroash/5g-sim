@@ -13,21 +13,42 @@ echo "[server-a] Starting Server A (Control Plane)"
 echo "[server-a] ========================================="
 
 # ------------------------------------------------------------
-# 1. Loopback — stable SBA address all NFs bind to
+# 1. Loopback
 # ------------------------------------------------------------
 echo "[server-a] Configuring loopback 10.1.0.1/32..."
 ip addr add 10.1.0.1/32 dev lo 2>/dev/null || echo "[server-a] Loopback already set"
 ip link set lo up
 
 # ------------------------------------------------------------
-# 2. Uplinks — ContainerLab assigns IPs via the ipv4 field,
-#    but we need to ensure the interfaces are up.
+# 2. Uplinks
 # ------------------------------------------------------------
+wait_for_iface() {
+  local dev=$1
+  local max_s=${2:-30}
+  if ip link show "$dev" >/dev/null 2>&1; then
+    echo "[server-a] $dev already present."
+    return 0
+  fi
+  echo "[server-a] Waiting for containerlab to attach $dev (max ${max_s}s)..."
+  local i
+  for i in $(seq 1 "$max_s"); do
+    if ip link show "$dev" >/dev/null 2>&1; then
+      echo "[server-a] $dev attached after ${i}s."
+      return 0
+    fi
+    sleep 1
+  done
+  echo "[server-a] WARNING: $dev still missing — continuing."
+}
+
+wait_for_iface eth1 30
+wait_for_iface eth2 30
+
 echo "[server-a] Bringing up eth1 (Leaf1 uplink)..."
-ip link set eth1 up
+ip link set eth1 up 2>/dev/null || echo "[server-a] WARNING: eth1 up failed"
 
 echo "[server-a] Bringing up eth2 (Leaf2 uplink)..."
-ip link set eth2 up
+ip link set eth2 up 2>/dev/null || echo "[server-a] WARNING: eth2 up failed"
 
 # ------------------------------------------------------------
 # 3. IP forwarding
@@ -36,16 +57,13 @@ echo "[server-a] Enabling IP forwarding..."
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
 # ------------------------------------------------------------
-# 4. FRR — owns OSPF adjacency with both leaves
+# 4. FRR
 # ------------------------------------------------------------
 echo "[server-a] Starting FRR..."
-# Ensure correct ownership
 chown -R frr:frr /etc/frr/
 
-# Start FRR services
 /usr/lib/frr/frrinit.sh start
 
-# Wait for FRR to come up
 for i in $(seq 1 10); do
   if vtysh -c "show version" >/dev/null 2>&1; then
     echo "[server-a] FRR is up."
@@ -56,7 +74,7 @@ for i in $(seq 1 10); do
 done
 
 # ------------------------------------------------------------
-# 5. Wait for OSPF to converge, then print status
+# 5. Convergence pause (see PHASE1-VERIFY.md for detailed checks)
 # ------------------------------------------------------------
 echo "[server-a] Waiting for OSPF to converge (15s)..."
 sleep 15
@@ -67,8 +85,8 @@ echo "[server-a] Network status"
 echo "[server-a] ========================================="
 echo ""
 echo "--- Interfaces ---"
-ip addr show eth1
-ip addr show eth2
+ip addr show eth1 2>/dev/null || true
+ip addr show eth2 2>/dev/null || true
 ip addr show lo
 
 echo ""
@@ -87,7 +105,7 @@ echo "[server-a] Stable address for NFs: 10.1.0.1"
 echo ""
 
 # ------------------------------------------------------------
-# Phase 2: start NFs in dependency order with health checks
+# Phase 2
 # ------------------------------------------------------------
 
 wait_http() {
@@ -121,5 +139,4 @@ echo "[server-a] Phase 2 complete — NRF, AMF, SMF running"
 echo "[server-a] ========================================="
 echo ""
 
-# Keep container alive, tail NF logs for visibility
 tail -f /var/log/nrf.log /var/log/amf.log /var/log/smf.log 2>/dev/null || tail -f /dev/null

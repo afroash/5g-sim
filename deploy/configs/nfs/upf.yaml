@@ -1,3 +1,11 @@
 gtp_port: 2152
 bind_addr: "10.1.1.1"
 pfcp_sim_port: 8002
+
+# N6 (data network) interface — TUN device used to inject UE traffic
+# into the host kernel so it can be routed to internet-sim via OSPF.
+# Ref: TS 23.501 §5.8.2.11.3
+n6_iface: "upf-n6"
+# Sit at the top of the UE pool — the SMF allocates from .1 upward, so
+# anything other than the high end risks colliding with a UE address.
+n6_cidr: "10.45.0.254/24"

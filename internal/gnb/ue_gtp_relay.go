@@ -70,46 +70,33 @@ func (g *GNB) startUEGTPRelay(port int) error {
 // handleUplinkFromUE is the TEID handler for packets arriving on the
 // UE-facing socket.
 //
-// Lookup strategy: the gNB does not know the UE IP at PDU Session Resource
-// Setup time (it lives inside the NAS PDU Session Establishment Accept,
-// which the gNB relays opaquely). The session is therefore created with
-// UEIP = "" and the relay learns the IP from the first uplink packet:
+// Sessions are looked up by the UE's UDP source address (the GTP-U socket
+// the UE writes from). That binding is stable for the lifetime of the
+// PDU session and is unaffected by inner-packet anomalies (IPv6 traffic
+// the kernel emits on the TUN, packets with mgmt-network source IPs the
+// kernel happens to route via the default route, etc.). The session is
+// claimed on the first valid IPv4 packet from a previously-unseen UDP
+// source address.
 //
-//  1. Find a session whose cached UEIP already matches the inner src IP.
-//  2. Failing that, claim a session with UEIP == "" and assign srcIP to it.
-//  3. Failing that, drop the packet.
-//
-// Step 2 is a single-UE shortcut: with multiple concurrent UEs we'd need
-// per-UE TEIDs (already on the TODO list). The current UE simulator hard-
-// codes TEID=1 so demux by TEID alone is impossible.
+// Inbound packets are filtered to plausible IPv4 G-PDUs before any session
+// state is touched, otherwise the very first kernel-generated IPv6 RS on
+// the UE's TUN would mis-bind the session.
 //
 // Ref: TS 29.281 §5.1 — G-PDU forwarding
 func (g *GNB) handleUplinkFromUE(teid uint32, src *net.UDPAddr, innerPkt []byte) {
-	if len(innerPkt) < 20 {
-		fmt.Printf("[gNB] relay: UE uplink dropped — inner packet too short (%d bytes)\n",
-			len(innerPkt))
+	if !plausibleUEIPv4(innerPkt) {
+		// Silent drop — logging every IPv6 RS / multicast packet would
+		// flood the gNB log on TUN bring-up.
 		return
 	}
 	srcIP := net.IP(innerPkt[12:16]).String()
 
-	session := g.resolveSessionForUplink(srcIP)
+	session := g.resolveSessionForUplink(src, srcIP)
 	if session == nil {
-		fmt.Printf("[gNB] relay: UE uplink dropped — no session for UE IP %s (TEID=0x%08X)\n",
-			srcIP, teid)
+		fmt.Printf("[gNB] relay: UE uplink dropped — no session for UDP src %s (inner src %s, TEID=0x%08X)\n",
+			src, srcIP, teid)
 		return
 	}
-
-	// Cache the UE's return address on the first uplink packet so the
-	// downlink path knows where to send replies.
-	g.mu.Lock()
-	if session.UESrcAddr == nil {
-		session.UESrcAddr = src
-		fmt.Printf("[gNB] relay: UE GTP endpoint learned for %s: %s\n", srcIP, src)
-	} else if session.UESrcAddr.String() != src.String() {
-		// UE roamed source port — refresh.
-		session.UESrcAddr = src
-	}
-	g.mu.Unlock()
 
 	if session.upfTunnel == nil || session.UPFAddr == nil {
 		fmt.Printf("[gNB] relay: UE uplink dropped — UPF tunnel not ready for %s\n", srcIP)
@@ -126,29 +113,57 @@ func (g *GNB) handleUplinkFromUE(teid uint32, src *net.UDPAddr, innerPkt []byte)
 		srcIP, dstIP, len(innerPkt), session.ULTEID)
 }
 
-// resolveSessionForUplink finds the session matching the inner src IP,
-// or claims an unbound session (UEIP == "") and assigns srcIP to it.
-// Returns nil if no session is available.
+// plausibleUEIPv4 returns true iff pkt looks like an IPv4 G-PDU that
+// could plausibly be sourced by a UE: long enough, version 4, and a
+// non-zero, non-multicast, non-broadcast source address. The aim is to
+// reject kernel-generated noise (IPv6 RS/NS, multicast listener reports,
+// DAD probes from src 0.0.0.0) without trying to validate the source
+// against any specific UE pool.
+func plausibleUEIPv4(pkt []byte) bool {
+	if len(pkt) < 20 {
+		return false
+	}
+	if pkt[0]>>4 != 4 {
+		return false
+	}
+	src0 := pkt[12]
+	if src0 == 0 || src0 == 255 || src0 >= 224 {
+		return false // 0.0.0.0/8, multicast 224.0.0.0/4, broadcast
+	}
+	return true
+}
+
+// resolveSessionForUplink finds the session whose cached UE UDP source
+// address matches udpSrc. If none matches and an unbound session exists
+// (created at N2 time, no uplink seen yet), it is claimed and bound to
+// this UDP source. Returns nil if no slot is available.
 //
 // Ref: TS 29.281 §5.1
-func (g *GNB) resolveSessionForUplink(srcIP string) *UETunnelSession {
+func (g *GNB) resolveSessionForUplink(udpSrc *net.UDPAddr, innerSrcIP string) *UETunnelSession {
+	udpKey := udpSrc.String()
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// 1. Exact match on already-known UE IP.
+	// 1. Match by previously-seen UE UDP source addr.
 	for _, s := range g.ueSessions {
-		if s.UEIP == srcIP {
+		if s.UESrcAddr != nil && s.UESrcAddr.String() == udpKey {
+			// Opportunistically populate UEIP for logging the first time
+			// we see a clean IPv4 packet on this session.
+			if s.UEIP == "" {
+				s.UEIP = innerSrcIP
+			}
 			return s
 		}
 	}
 
-	// 2. Claim an unbound session (created at N2 time, not yet seen any
-	// uplink). Single-UE shortcut.
+	// 2. Claim an unbound session (no uplink yet). Single-UE shortcut.
 	for _, s := range g.ueSessions {
-		if s.UEIP == "" {
-			s.UEIP = srcIP
-			fmt.Printf("[gNB] relay: bound RAN-UE-NGAP-ID=%d to UE IP %s\n",
-				s.RanUeNgapID, srcIP)
+		if s.UESrcAddr == nil {
+			s.UESrcAddr = udpSrc
+			s.UEIP = innerSrcIP
+			fmt.Printf("[gNB] relay: bound RAN-UE-NGAP-ID=%d to UDP src %s (UE IP %s)\n",
+				s.RanUeNgapID, udpSrc, innerSrcIP)
 			return s
 		}
 	}

@@ -9,6 +9,7 @@ package gnb
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"time"
 
 	ngapbuilder "github.com/afroash/5g-sim/internal/ngap"
@@ -95,6 +96,20 @@ func (g *GNB) Start() error {
 	go func() {
 		if err := g.startUEListener(); err != nil {
 			fmt.Printf("[gNB] UE listener stopped: %v\n", err)
+		}
+	}()
+
+	// Minimal readiness endpoint for UE / container orchestration (SCTP tooling is sparse).
+	go func() {
+		const healthAddr = ":8003"
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok\n"))
+		})
+		fmt.Printf("[gNB] HTTP health listening on http://0.0.0.0%s/health\n", healthAddr)
+		if err := http.ListenAndServe(healthAddr, mux); err != nil {
+			fmt.Printf("[gNB] HTTP health server exited: %v\n", err)
 		}
 	}()
 

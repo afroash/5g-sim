@@ -85,9 +85,15 @@ func (u *UPF) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	u.mu.Lock()
 	existing, exists := u.sessions[req.ULTEID]
 	if exists && req.GNBAddress != "" {
-		// Update existing session with gNB downlink info
+		// Update existing session with gNB downlink info from the gNB-side
+		// PFCP notify (sent by the gNB once its UPF-facing socket is bound).
 		existing.GNBAddr = gnbAddr
 		existing.GNTEID = req.DLTEID
+		if req.UEIPAddress != "" && existing.UEIPAddress != req.UEIPAddress {
+			delete(u.sessionsByUEIP, existing.UEIPAddress)
+			existing.UEIPAddress = req.UEIPAddress
+			u.sessionsByUEIP[req.UEIPAddress] = existing
+		}
 		u.mu.Unlock()
 		fmt.Printf("[UPF] PFCP-sim: session updated UL-TEID=0x%08X DL-TEID=0x%08X gNB=%s\n",
 			req.ULTEID, req.DLTEID, req.GNBAddress)
@@ -121,6 +127,9 @@ func (u *UPF) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
 	fmt.Sscanf(r.URL.Path[len("/pfcp-sim/v1/sessions/"):], "%d", &teid)
 
 	u.mu.Lock()
+	if sess, ok := u.sessions[teid]; ok && sess.UEIPAddress != "" {
+		delete(u.sessionsByUEIP, sess.UEIPAddress)
+	}
 	delete(u.sessions, teid)
 	u.mu.Unlock()
 	u.tunnel.DeregisterTEID(teid)
