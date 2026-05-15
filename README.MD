@@ -205,15 +205,49 @@ For the **end-to-end lab** (Cisco IOL, OSPF, UE → **`10.100.0.1`** HTTP target
 
 ## Running (local dev — processes only)
 
+### 5G Observatory (local NF sim GUI)
+
+The observatory is a **sidecar** for local multi-process simulation. It does **not** attach to ContainerLab deploys in v1 — use it while NFs run as `go run` processes on localhost.
+
+**Build the UI once** (embeds into the Go binary):
+
 ```bash
-# Terminal 1 - Start NRF
+cd web/observatory && npm install && npm run build
+```
+
+**Start observatory and NFs** (separate terminals, from repo root):
+
+```bash
+# Terminal 0 — observatory (HTTP + WebSocket on :9090)
+go run ./cmd/observatory
+
+# Terminals 1–6 — enable event streaming, then start NFs in order
+export OBSERVATORY_URL=http://127.0.0.1:9090
 go run ./cmd/nrf
-
-# Terminal 2 - Start AMF
+go run ./cmd/smf
 go run ./cmd/amf
-
-# Terminal 3 - Start gNB (connects to AMF, triggers NG Setup)
+go run ./cmd/upf
 go run ./cmd/gnb
+go run ./cmd/ue          # or use “+ Add UE” in the GUI (spawns another UE process)
+```
+
+Open **http://127.0.0.1:9090** for live topology health, procedure/message stream, and UE fleet (AMF `GET /obs/v1/ues` + spawned UEs).
+
+Config: [`configs/observatory.yaml`](configs/observatory.yaml). Without `OBSERVATORY_URL`, NFs behave exactly as before.
+
+**ContainerLab:** `./deploy/build.sh` and `containerlab deploy` are unchanged — do not set `OBSERVATORY_URL` in deploy entrypoints.
+
+**UE modes (local processes vs ContainerLab):** see **[docs/observatory-ue-modes.md](docs/observatory-ue-modes.md)** for a phased plan (profiles, observability, risks).
+
+### Minimal local stack (no GUI)
+
+```bash
+go run ./cmd/nrf
+go run ./cmd/smf
+go run ./cmd/amf
+go run ./cmd/upf
+go run ./cmd/gnb
+go run ./cmd/ue
 ```
 
 ---

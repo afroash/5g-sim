@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 )
 
 // Level is the severity of a log entry.
@@ -76,6 +77,14 @@ type Sink struct {
 
 // globalSink is the process-wide output target.
 var globalSink = &Sink{coloured: true}
+
+// publishHook is called for each log entry when set (e.g. by pkg/obspub).
+var publishHook func(Entry)
+
+// SetPublishHook registers a callback invoked after each log entry is written.
+func SetPublishHook(fn func(Entry)) {
+	publishHook = fn
+}
 
 // InitFile opens a JSONL log file. Call once at startup.
 // All Logger instances share this file.
@@ -147,6 +156,10 @@ func (l *Logger) log(level Level, msg, specRef string, kvpairs ...string) {
 			l.sink.jsonFile.Write(b)
 			l.sink.jsonFile.WriteString("\n")
 		}
+	}
+
+	if publishHook != nil {
+		publishHook(entry)
 	}
 }
 

@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	github.com/free5gc/aper v1.1.0
 	github.com/free5gc/ngap v1.1.2
+	github.com/gorilla/websocket v1.5.3
 	github.com/ishidawataru/sctp v0.0.0-20251114114122-19ddcbc6aae2
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	gopkg.in/yaml.v3 v3.0.1

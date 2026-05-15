@@ -1,0 +1,32 @@
+# 5G Observatory — local NF simulation defaults
+bind_address: 127.0.0.1
+port: 9090
+amf_obs_url: http://127.0.0.1:8090/obs/v1/ues
+event_buffer: 500
+
+nfs:
+  - id: NRF
+    label: NRF
+    sub: Network Repository Function
+    spec: TS 29.510
+    health_url: http://127.0.0.1:8000/health
+  - id: AMF
+    label: AMF
+    sub: Access & Mobility Management
+    spec: TS 29.518
+    health_url: http://127.0.0.1:8090/health
+  - id: SMF
+    label: SMF
+    sub: Session Management Function
+    spec: TS 29.502
+    health_url: http://127.0.0.1:8001/health
+  - id: UPF
+    label: UPF
+    sub: User Plane Function
+    spec: TS 29.244
+    health_url: http://127.0.0.1:8002/health
+  - id: gNB
+    label: gNB
+    sub: Next-Gen NodeB
+    spec: TS 38.413
+    health_url: http://127.0.0.1:8003/health

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/afroash/5g-sim/pkg/obslog"
+	"github.com/afroash/5g-sim/pkg/obspub"
 	"github.com/afroash/5g-sim/pkg/pcap"
 	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
@@ -132,6 +133,15 @@ func (h *Hub) MakeCaptureFunc(from, to string) func(direction string, data []byt
 // Procedure records a 5G procedure event for the sequence diagram and log.
 func (h *Hub) Procedure(from, to seqdiag.Node, label, specRef string, kvpairs ...string) {
 	h.seq.Message(from, to, label, specRef)
+
+	fields := make(map[string]string)
+	for i := 0; i+1 < len(kvpairs); i += 2 {
+		fields[kvpairs[i]] = kvpairs[i+1]
+	}
+	if obspub.Enabled() {
+		obspub.Emit(obspub.FromProcedure(from, to, label, specRef, fields))
+	}
+
 	obslog.New(string(from)).Info(
 		fmt.Sprintf("→ %s: %s", string(to), label),
 		specRef,

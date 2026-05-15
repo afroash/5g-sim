@@ -1,7 +1,9 @@
-{"ts":"2026-02-24T12:28:36.423318163Z","component":"gNB","level":"INFO ","msg":"→ AMF: NGSetupRequest","specRef":"TS 38.413 §9.2.6.1"}
-{"ts":"2026-02-24T12:28:36.423780449Z","component":"AMF","level":"INFO ","msg":"→ gNB: NGSetupResponse","specRef":"TS 38.413 §9.2.6.2"}
-{"ts":"2026-02-24T12:28:36.424550319Z","component":"gNB","level":"INFO ","msg":"→ AMF: InitialUEMessage (Registration Request)","specRef":"TS 38.413 §9.2.5.1"}
-{"ts":"2026-02-24T12:28:36.629897294Z","component":"gNB","level":"INFO ","msg":"→ AMF: UplinkNASTransport (PDU Session Estab Request)","specRef":"TS 38.413 §9.2.5.3"}
-{"ts":"2026-02-24T12:28:36.630018266Z","component":"AMF","level":"INFO ","msg":"→ SMF: Nsmf_PDUSession_CreateSMContext","specRef":"TS 29.502 §5.2.2.2","fields":{"dnn":"internet","supi":"imsi-sim-1"}}
-{"ts":"2026-02-24T12:28:36.633179422Z","component":"SMF","level":"INFO ","msg":"→ AMF: 201 Created (IP allocated)","specRef":"TS 29.502 §6.1.6.3.2","fields":{"ip":"10.0.0.1"}}
-{"ts":"2026-02-24T12:28:36.633265024Z","component":"AMF","level":"INFO ","msg":"→ gNB: DownlinkNASTransport (PDU Session Estab Accept)","specRef":"TS 38.413 §9.2.5.2","fields":{"ip":"10.0.0.1"}}
+{"ts":"2026-05-15T21:02:09.195534269+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: NGSetupRequest","specRef":"TS 38.413 §9.2.6.1"}
+{"ts":"2026-05-15T21:02:09.19593497+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: NGSetupResponse","specRef":"TS 38.413 §9.2.6.2"}
+{"ts":"2026-05-15T21:02:30.508897018+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: InitialUEMessage (Registration Request)","specRef":"TS 38.413 §9.2.5.1"}
+{"ts":"2026-05-15T21:02:30.716795859+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: UplinkNASTransport (PDU Session Estab Request)","specRef":"TS 38.413 §9.2.5.3"}
+{"ts":"2026-05-15T21:02:30.716879735+01:00","component":"AMF","level":"INFO ","msg":"→ SMF: Nsmf_PDUSession_CreateSMContext","specRef":"TS 29.502 §5.2.2.2","fields":{"dnn":"internet","supi":"imsi-sim-1"}}
+{"ts":"2026-05-15T21:02:30.718842676+01:00","component":"SMF","level":"INFO ","msg":"→ AMF: 201 Created (IP allocated)","specRef":"TS 29.502 §6.1.6.3.2","fields":{"ip":"10.0.0.2"}}
+{"ts":"2026-05-15T21:02:30.718933765+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: PDUSessionResourceSetupRequest","specRef":"TS 38.413 §9.2.1.1","fields":{"ul_teid":"0x00000002","upf":"127.0.0.1:2152"}}
+{"ts":"2026-05-15T21:02:30.720388788+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: PDUSessionResourceSetupResponse","specRef":"TS 38.413 §9.2.1.2","fields":{"dl_teid":"0x00000001"}}
+{"ts":"2026-05-15T21:02:30.7204398+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: DownlinkNASTransport (PDU Session Estab Accept)","specRef":"TS 38.413 §9.2.5.2","fields":{"ip":"10.0.0.2"}}

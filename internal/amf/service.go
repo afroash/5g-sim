@@ -32,6 +32,8 @@ func (a *AMF) Start() error {
 		a.config.Pointer,
 	)
 
+	// TODO:Register with the NRF
+
 	// Health check HTTP server — lets the entrypoint poll readiness
 	// without needing to probe the SCTP port.
 	go func() {
@@ -40,6 +42,7 @@ func (a *AMF) Start() error {
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, "ok")
 		})
+		mux.HandleFunc("/obs/v1/ues", a.handleObsUEs)
 		addr := fmt.Sprintf("%s:%d", a.config.BindAddress, a.config.HTTPPort)
 		fmt.Printf("[AMF] Health check listening on %s\n", addr)
 		if err := http.ListenAndServe(addr, mux); err != nil {
