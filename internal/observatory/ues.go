@@ -1,6 +1,7 @@
 package observatory
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/afroash/5g-sim/internal/ue"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,8 +28,15 @@ type UERecord struct {
 	GNB          string    `json:"gnb,omitempty"`
 	PDUSession   string    `json:"pduSession,omitempty"`
 	Source       string    `json:"source"`
+	Profile      string    `json:"profile,omitempty"` // spawn preset: local | clab
 	PID          int       `json:"pid,omitempty"`
 	SpawnedAt    time.Time `json:"spawnedAt,omitempty"`
+}
+
+// SpawnUEOptions selects how the observatory generates the temporary ue.yaml when spawning ./cmd/ue.
+type SpawnUEOptions struct {
+	Profile string `json:"profile"` // ue.ProfileLocal or ue.ProfileCLab (default local)
+	SUPI    string `json:"supi"`    // optional; omit for auto SERIAL
 }
 
 // AMFUE is the JSON shape from GET /obs/v1/ues on the AMF.
@@ -113,17 +123,51 @@ func (m *UEManager) List(ctx context.Context) ([]UERecord, error) {
 	return out, nil
 }
 
-// Spawn starts a UE subprocess with a unique SUPI.
-func (m *UEManager) Spawn(ctx context.Context) (UERecord, error) {
+// ParseSpawnUEBody parses the optional POST /api/v1/ues JSON ({ "profile", "supi" }).
+func ParseSpawnUEBody(raw []byte) (SpawnUEOptions, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return SpawnUEOptions{Profile: ue.ProfileLocal}, nil
+	}
+	var req SpawnUEOptions
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return SpawnUEOptions{}, err
+	}
+	prof := strings.ToLower(strings.TrimSpace(req.Profile))
+	if prof == "" {
+		prof = ue.ProfileLocal
+	}
+	if _, err := ue.BaseConfigForProfile(prof); err != nil {
+		return SpawnUEOptions{}, err
+	}
+	req.Profile = prof
+	req.SUPI = strings.TrimSpace(req.SUPI)
+	return req, nil
+}
+
+// Spawn starts a UE subprocess with a generated or caller-supplied SUPI and connection profile.
+func (m *UEManager) Spawn(ctx context.Context, opts SpawnUEOptions) (UERecord, error) {
+	profile := strings.ToLower(strings.TrimSpace(opts.Profile))
+	if profile == "" {
+		profile = ue.ProfileLocal
+	}
+	if _, err := ue.BaseConfigForProfile(profile); err != nil {
+		return UERecord{}, err
+	}
+
 	m.mu.Lock()
 	m.nextSerial++
 	serial := m.nextSerial
 	m.mu.Unlock()
 
-	supi := fmt.Sprintf("imsi-001010000000%03d", serial)
+	var supi string
+	if opts.SUPI != "" {
+		supi = opts.SUPI
+	} else {
+		supi = fmt.Sprintf("imsi-001010000000%03d", serial)
+	}
 	id := fmt.Sprintf("UE-%03d", serial)
 
-	cfgPath, err := m.writeUEConfig(supi)
+	cfgPath, err := m.writeUEConfig(supi, profile)
 	if err != nil {
 		return UERecord{}, err
 	}
@@ -143,10 +187,11 @@ func (m *UEManager) Spawn(ctx context.Context) (UERecord, error) {
 
 	rec := UERecord{
 		ID:        id,
-		IMSI:      supi[5:],
+		IMSI:      imsiDigitsWithoutPrefix(supi),
 		State:     "STARTING",
 		GNB:       "gNB",
 		Source:    "spawned",
+		Profile:   profile,
 		PID:       cmd.Process.Pid,
 		SpawnedAt: time.Now(),
 	}
@@ -184,29 +229,33 @@ func (m *UEManager) Stop(id string) error {
 	return cmd.Process.Signal(syscall.SIGTERM)
 }
 
-func (m *UEManager) writeUEConfig(supi string) (string, error) {
+func imsiDigitsWithoutPrefix(supi string) string {
+	if len(supi) >= 5 && strings.EqualFold(supi[:5], "imsi-") {
+		return supi[5:]
+	}
+	return supi
+}
+
+func (m *UEManager) writeUEConfig(supi string, profile string) (string, error) {
 	dir := filepath.Join(os.TempDir(), "5g-sim-observatory")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, supi+".yaml")
-	cfg := map[string]interface{}{
-		"supi":            supi,
-		"gnb_address":     "127.0.0.1",
-		"gnb_sctp_port":    38413,
-		"gnb_gtp_address": "127.0.0.1:2153",
-		"dnn":             "internet",
-		"slice": map[string]interface{}{
-			"sst": 1,
-			"sd":  "000001",
-		},
+	safeBase := filepath.Base(strings.ReplaceAll(supi, ":", "_"))
+	path := filepath.Join(dir, safeBase+".yaml")
+
+	cfg, err := ue.BaseConfigForProfile(profile)
+	if err != nil {
+		return "", err
 	}
+	cfg.SUPI = supi
+
 	f, err := os.Create(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	if err := yaml.NewEncoder(f).Encode(cfg); err != nil {
+	if err := yaml.NewEncoder(f).Encode(&cfg); err != nil {
 		return "", err
 	}
 	return path, nil

@@ -86,12 +86,23 @@ export function useObservatory() {
     setMessages([]);
   }, []);
 
-  const spawnUE = useCallback(async () => {
-    const r = await fetch("/api/v1/ues", { method: "POST" });
-    if (!r.ok) throw new Error(await r.text());
-    await refreshUEs();
-    return r.json();
-  }, [refreshUEs]);
+  const spawnUE = useCallback(
+    async (opts = {}) => {
+      const body = {
+        profile: opts.profile || "local",
+        ...(opts.supi ? { supi: opts.supi } : {}),
+      };
+      const r = await fetch("/api/v1/ues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      await refreshUEs();
+      return r.json();
+    },
+    [refreshUEs]
+  );
 
   const stopUE = useCallback(
     async (id) => {

@@ -4,8 +4,16 @@ package ue
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
+)
+
+// Known connection presets for spawning UEs locally or against ContainerLab NFs.
+// Ref: docs/observatory-ue-modes.md Phase A — profile is data-only; YAML file still overlays.
+const (
+	ProfileLocal = "local"
+	ProfileCLab  = "clab"
 )
 
 // Config holds the UE's startup configuration.
@@ -51,13 +59,46 @@ func DefaultConfig() Config {
 	}
 }
 
+// DefaultCLabConfig returns presets aligned with deploy/configs/nfs/ue.yaml (CLAB-facing gNB).
+func DefaultCLabConfig() Config {
+	return Config{
+		SUPI:          "imsi-001010000000001",
+		GNBAddress:    "10.1.1.1",
+		GNBSCTPPort:   38413,
+		GNBGTPAddress: "10.1.1.1:2153",
+		DNN:           "internet",
+		Slice:         SliceConfig{SST: 1, SD: "000001"},
+	}
+}
+
+// BaseConfigForProfile returns preset connectivity for name: "local" (or ""), or "clab".
+func BaseConfigForProfile(name string) (Config, error) {
+	switch normalizeProfile(name) {
+	case "", ProfileLocal:
+		return DefaultConfig(), nil
+	case ProfileCLab:
+		return DefaultCLabConfig(), nil
+	default:
+		return Config{}, fmt.Errorf("ue: unknown profile %q (use %q or %q)", strings.TrimSpace(name), ProfileLocal, ProfileCLab)
+	}
+}
+
+func normalizeProfile(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
 // LoadConfig reads a YAML file and returns a Config merged over DefaultConfig.
 func LoadConfig(path string) (Config, error) {
+	return LoadConfigOver(DefaultConfig(), path)
+}
+
+// LoadConfigOver merges a YAML file on top of base (omit keys in YAML to keep base values).
+func LoadConfigOver(base Config, path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("ue: read config %s: %w", path, err)
 	}
-	cfg := DefaultConfig()
+	cfg := base
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("ue: parse config %s: %w", path, err)
 	}

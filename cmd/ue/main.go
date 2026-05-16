@@ -7,6 +7,7 @@
 // Usage:
 //
 //	go run ./cmd/ue
+//	go run ./cmd/ue -profile local|clab   # preset gNB endpoints (YAML still wins with -config)
 //	go run ./cmd/ue -config /etc/5g-sim/ue.yaml
 package main
 
@@ -26,13 +27,26 @@ func main() {
 	fmt.Println("╚══════════════════════════════════╝")
 
 	var configPath string
+	var profileFlag string
 	flag.StringVar(&configPath, "config", "", "path to YAML config file")
+	flag.StringVar(&profileFlag, "profile", "", "connection preset: local or clab (merged under -config)")
 	flag.Parse()
 
-	cfg := ue.DefaultConfig()
+	var cfg ue.Config
+	if profileFlag != "" {
+		var e error
+		cfg, e = ue.BaseConfigForProfile(profileFlag)
+		if e != nil {
+			fmt.Fprintf(os.Stderr, "[UE] Config: %v\n", e)
+			os.Exit(1)
+		}
+	} else {
+		cfg = ue.DefaultConfig()
+	}
+
+	var err error
 	if configPath != "" {
-		var err error
-		cfg, err = ue.LoadConfig(configPath)
+		cfg, err = ue.LoadConfigOver(cfg, configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[UE] Config: %v\n", err)
 			os.Exit(1)

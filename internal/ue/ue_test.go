@@ -77,3 +77,52 @@ func TestLoadConfig_Missing(t *testing.T) {
 	}
 	t.Logf("missing config correctly rejected: %v ✓", err)
 }
+
+func TestBaseConfigForProfile(t *testing.T) {
+	local, err := BaseConfigForProfile("local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	def := DefaultConfig()
+	if local != def {
+		t.Fatalf("local != default: %+v vs %+v", local, def)
+	}
+	clab, err := BaseConfigForProfile("clab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clab.GNBAddress != "10.1.1.1" || clab.GNBGTPAddress != "10.1.1.1:2153" {
+		t.Fatalf("clab preset: %+v", clab)
+	}
+	if _, err := BaseConfigForProfile("nope"); err == nil {
+		t.Fatal("expected error for unknown profile")
+	}
+}
+
+func TestLoadConfigOver(t *testing.T) {
+	base, err := BaseConfigForProfile("clab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(t.TempDir(), "override.yaml")
+	override := `supi: "imsi-001010000000042"
+gnb_address: "192.0.2.1"
+`
+	if err := os.WriteFile(tmp, []byte(override), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfigOver(base, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SUPI != "imsi-001010000000042" {
+		t.Errorf("SUPI %q", cfg.SUPI)
+	}
+	if cfg.GNBAddress != "192.0.2.1" {
+		t.Errorf("GNBAddress %q", cfg.GNBAddress)
+	}
+	// Omitted keys keep clab base
+	if cfg.GNBGTPAddress != "10.1.1.1:2153" {
+		t.Errorf("GNBGTPAddress should keep clab base when omitted: %q", cfg.GNBGTPAddress)
+	}
+}

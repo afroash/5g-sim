@@ -233,6 +233,16 @@ go run ./cmd/ue          # or use “+ Add UE” in the GUI (spawns another UE p
 
 Open **http://127.0.0.1:9090** for live topology health, procedure/message stream, and UE fleet (AMF `GET /obs/v1/ues` + spawned UEs).
 
+**UE connection profiles** (used by `cmd/ue` and the observatory **+ Add UE** control after `web/observatory` is built):
+
+| Profile | gNB SCTP target | gNB GTP-U (`gnb_gtp_address`) | Typical use |
+|---------|----------------|----------------------------------|-------------|
+| `local` (default) | `127.0.0.1:38413` | `127.0.0.1:2153` | `go run ./cmd/*` NFs on the host |
+| `clab` | `10.1.1.1:38413` | `10.1.1.1:2153` | Same as [`deploy/configs/nfs/ue.yaml`](deploy/configs/nfs/ue.yaml) for ContainerLab / lab addressing |
+
+- CLI: `go run ./cmd/ue -profile local|clab` — optional `-config path.yaml` merges on top of the profile (`LoadConfigOver`).
+- Observatory: `POST /api/v1/ues` with optional JSON body `{"profile":"clab","supi":"imsi-…"}` (`supi` omitted for auto-sequence).
+
 Config: [`configs/observatory.yaml`](configs/observatory.yaml). Without `OBSERVATORY_URL`, NFs behave exactly as before.
 
 **ContainerLab:** `./deploy/build.sh` and `containerlab deploy` are unchanged — do not set `OBSERVATORY_URL` in deploy entrypoints.

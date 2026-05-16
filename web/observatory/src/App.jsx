@@ -288,28 +288,49 @@ function MessageDetail({ msg, onClose }) {
   );
 }
 
-function UEPanel({ ues, onAdd, onDetach, selected, onSelect }) {
+function UEPanel({ ues, onAdd, onDetach, selected, onSelect, spawnProfile, onSpawnProfileChange }) {
   return (
     <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center" }}>
+      <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <span style={{ color: C.muted, fontSize: 11, textTransform: "uppercase" }}>User Equipment</span>
         <span style={{ marginLeft: 8, color: C.dim, fontSize: 10 }}>{ues.length} devices</span>
-        <button
-          onClick={onAdd}
-          style={{
-            marginLeft: "auto",
-            padding: "4px 12px",
-            background: C.accentDim,
-            border: `1px solid ${C.accent}`,
-            borderRadius: 4,
-            color: C.accent,
-            fontSize: 11,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          + Add UE
-        </button>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: C.dim }}>
+            profile
+            <select
+              value={spawnProfile}
+              onChange={(e) => onSpawnProfileChange(e.target.value)}
+              style={{
+                padding: "3px 8px",
+                background: C.surface,
+                border: `1px solid ${C.border}`,
+                borderRadius: 4,
+                color: C.text,
+                fontSize: 10,
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              <option value="local">local</option>
+              <option value="clab">clab</option>
+            </select>
+          </label>
+          <button
+            onClick={onAdd}
+            style={{
+              padding: "4px 12px",
+              background: C.accentDim,
+              border: `1px solid ${C.accent}`,
+              borderRadius: 4,
+              color: C.accent,
+              fontSize: 11,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            + Add UE
+          </button>
+        </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
         {ues.length === 0 && (
@@ -353,6 +374,7 @@ function UEPanel({ ues, onAdd, onDetach, selected, onSelect }) {
             </div>
             <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
               IMSI {ue.imsi} {ue.ip ? `· ${ue.ip}` : ""}
+              {ue.source === "spawned" && ue.profile ? ` · ${ue.profile}` : ""}
             </div>
           </div>
         ))}
@@ -399,14 +421,16 @@ export default function App() {
   const [tab, setTab] = useState("topology");
   const [err, setErr] = useState(null);
 
+  const [spawnProfile, setSpawnProfile] = useState("local");
+
   const handleAddUE = useCallback(async () => {
     try {
       setErr(null);
-      await spawnUE();
+      await spawnUE({ profile: spawnProfile });
     } catch (e) {
       setErr(String(e.message || e));
     }
-  }, [spawnUE]);
+  }, [spawnUE, spawnProfile]);
 
   const handleDetach = useCallback(
     async (id) => {
@@ -494,7 +518,15 @@ export default function App() {
               />
             </div>
           ) : (
-            <UEPanel ues={ues} onAdd={handleAddUE} onDetach={handleDetach} selected={selectedUE} onSelect={setSelectedUE} />
+            <UEPanel
+              ues={ues}
+              onAdd={handleAddUE}
+              onDetach={handleDetach}
+              selected={selectedUE}
+              onSelect={setSelectedUE}
+              spawnProfile={spawnProfile}
+              onSpawnProfileChange={setSpawnProfile}
+            />
           )}
         </div>
         <div style={{ borderRight: `1px solid ${C.border}`, minHeight: 0, display: "flex", flexDirection: "column" }}>
