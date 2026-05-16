@@ -3,3 +3,4 @@ deploy/PHASE1-VERIFY.md
 web/observatory/node_modules/
 docs/*
 5g-observatory.jsx
+captures/*

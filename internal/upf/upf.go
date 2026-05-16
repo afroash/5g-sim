@@ -8,7 +8,7 @@
 // In our simulator the UPF simply:
 //  1. Listens for GTP-U packets on UDP port 2152
 //  2. Decapsulates them and logs the inner IP packet
-//  3. Simulates a "ping reply" for ICMP echo requests
+//  3. Simulates a "ping reply" for ICMP echo requests (in standalone mode, not sure if we still do this...)
 //
 // A production UPF would also handle PFCP (N4 interface from SMF)
 // for rule installation — we skip that here and use static forwarding.
@@ -248,6 +248,9 @@ func (u *UPF) Start() {
 		n6, err := StartN6(u.config.N6Iface, u.config.N6CIDR)
 		if err != nil {
 			fmt.Printf("[UPF] N6 disabled: %v\n", err)
+			// note: when the upf is running standalone, this will not be able to setup the N6 interface, this is ok, we will use the fake-reply path.	
+			// TODO: we need to handle this case, similar to the ue. we want to be able to visually see requests going to and from upf towards the data network over the N6. 
+			// as it would happen over a real network. 
 		} else {
 			u.n6 = n6
 			go n6.ReadLoop(u.handleN6Packet)

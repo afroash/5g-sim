@@ -28,6 +28,7 @@ import (
 // Blocks until the session is established, then stays alive for manual testing.
 // Ref: TS 23.502 §4.2.2, §4.3.2
 func (u *UE) Start() error {
+
 	fmt.Printf("[UE] Starting — SUPI: %s  gNB: %s:%d\n",
 		u.config.SUPI, u.config.GNBAddress, u.config.GNBSCTPPort)
 
@@ -195,7 +196,8 @@ func (u *UE) handlePDUSessionAccept(smPayload []byte) error {
 	if err != nil {
 		return fmt.Errorf("ue: decode PDU Session Accept: %w", err)
 	}
-
+	// note: allocatedIP is given by SMF, if we are in clab, this is an ip that is routable,
+	// if we are just running the ue as a standalone, this ip not routable.
 	u.allocatedIP = acc.AllocatedIP
 	fmt.Printf("[UE] Allocated IP: %s  DNN: %s\n", u.allocatedIP, acc.DNN)
 
@@ -203,12 +205,17 @@ func (u *UE) handlePDUSessionAccept(smPayload []byte) error {
 		fmt.Println("[UE] WARNING: no IP in accept — skipping TUN setup")
 		return nil
 	}
-
+	// note: we need to setup the TUN interface here, this is the interface that will be used to send and receive data to the UE.
+	// while in clab this is a "real" int with a ip that is routable, if we are just running the ue as a standalone, 
+	// this is a TUN interface will not come up.
+	// TODO: we need to handle this case, and either use a "real" interface or a TUN interface.
 	if err := u.setupTUN(u.allocatedIP); err != nil {
 		fmt.Printf("[UE] TUN setup failed: %v\n", err)
 		// Non-fatal — manual testing still possible via ping from host
 	}
-
+	// note: the connectivity test is used in clab only, in standalone we will not have a internet-sim to test against.
+	// TODO: we need to handle this case, the ue at this point is allowed to send and receive data, we want to be able to
+	// visually see requests going to and from ue towards upf and the data network over the N6. 
 	u.runConnectivityTest()
 	return nil
 }
