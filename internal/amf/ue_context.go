@@ -38,11 +38,18 @@ type UEContext struct {
 	// Ref: TS 38.413 §9.3.3.1
 	AMFUeNgapID int64
 
+	// RANUeNgapID is the gNB's local identifier for this UE on N2.
+	// Ref: TS 38.413 §9.3.3.2
+	RANUeNgapID int64
+
 	// RAN is the gNB this UE is currently connected through.
 	RAN *RAN
 
 	// AllowedNSSAI is the set of slices this UE is allowed to use.
 	AllowedNSSAI []nas.SNSSAI
+
+	// AllowedDnns from UDM subscription data (PDU session authorization).
+	AllowedDnns []string
 
 	// RegistrationType is how the UE registered (initial/mobility/periodic).
 	RegistrationType uint8

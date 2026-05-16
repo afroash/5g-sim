@@ -39,6 +39,7 @@ const (
 	NodeSMF Node = "SMF"
 	NodeUPF Node = "UPF"
 	NodeNRF Node = "NRF"
+	NodeUDM Node = "UDM"
 )
 
 // EventKind classifies the type of sequence diagram entry.

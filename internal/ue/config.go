@@ -39,6 +39,9 @@ type Config struct {
 	// Slice is the network slice the UE requests.
 	// Ref: TS 23.003 §28
 	Slice SliceConfig `yaml:"slice"`
+
+	// UDMAddress is optional; when set, UE verifies SUPI is provisioned before attach.
+	UDMAddress string `yaml:"udm_address"`
 }
 
 // SliceConfig identifies a 5G network slice.
@@ -56,6 +59,7 @@ func DefaultConfig() Config {
 		GNBGTPAddress: "127.0.0.1:2153",
 		DNN:           "internet",
 		Slice:         SliceConfig{SST: 1, SD: "000001"},
+		UDMAddress:    "http://127.0.0.1:8004",
 	}
 }
 
@@ -68,6 +72,7 @@ func DefaultCLabConfig() Config {
 		GNBGTPAddress: "10.1.1.1:2153",
 		DNN:           "internet",
 		Slice:         SliceConfig{SST: 1, SD: "000001"},
+		UDMAddress:    "http://127.0.0.1:8004",
 	}
 }
 

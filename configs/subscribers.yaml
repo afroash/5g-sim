@@ -1,0 +1,43 @@
+# Provisioned subscribers for UDM allowlist (local / observatory dev).
+# SUPI must match cmd/ue -config / observatory spawn identities.
+subscribers:
+  - supi: imsi-001010000000001
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000002
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000003
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000004
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000005
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000006
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000007
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000008
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000009
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }
+  - supi: imsi-001010000000010
+    enabled: true
+    allowed_dnns: [internet]
+    default_snssai: { sst: 1, sd: "000001" }

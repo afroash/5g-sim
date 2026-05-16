@@ -49,7 +49,23 @@ func (a *AMF) HandlePDUSessionEstablishmentRequest(conn net.Conn, ue *UEContext,
 		dnn = "internet"
 	}
 
-	// Step 1: Call SMF via N11 to create the session context
+	if len(ue.AllowedDnns) > 0 {
+		allowed := false
+		for _, d := range ue.AllowedDnns {
+			if d == dnn {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			fmt.Printf("[AMF]   DNN %q not allowed for SUPI %s\n", dnn, ue.SUPI)
+			nasReject := nas.BuildPDUSessionEstablishmentReject(req.PDUSessionID, 0x1A)
+			a.sendPDUSessionNASToUE(conn, ue, req.PDUSessionID, nasReject)
+			return
+		}
+	}
+
+	// Step  1: Call SMF via N11 to create the session context
 	// Ref: TS 23.502 §4.3.2.2.1 step 3
 	smfClient := smf.NewClient(a.config.SMFAddress)
 

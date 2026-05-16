@@ -30,3 +30,8 @@ nfs:
     sub: Next-Gen NodeB
     spec: TS 38.413
     health_url: http://127.0.0.1:8003/health
+  - id: UDM
+    label: UDM
+    sub: Unified Data Management
+    spec: TS 29.503
+    health_url: http://127.0.0.1:8004/health

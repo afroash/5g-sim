@@ -47,6 +47,14 @@ func TestRegistrationRequestRoundTrip(t *testing.T) {
 		t.Error("MobileIdentity should not be empty")
 	}
 
+	decoded, err := DecodeSUPIFromMobileIdentity(req.MobileIdentity)
+	if err != nil {
+		t.Fatalf("DecodeSUPIFromMobileIdentity: %v", err)
+	}
+	if decoded != supi {
+		t.Errorf("SUPI round-trip: got %q want %q", decoded, supi)
+	}
+
 	t.Logf("RegistrationRequest: %d bytes, type=%d followOn=%v ✓",
 		len(raw), req.RegistrationType, req.FollowOnRequest)
 }

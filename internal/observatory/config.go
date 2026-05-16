@@ -39,6 +39,7 @@ func DefaultConfig() Config {
 			{ID: "SMF", Label: "SMF", Sub: "Session Management Function", Spec: "TS 29.502", HealthURL: "http://127.0.0.1:8001/health"},
 			{ID: "UPF", Label: "UPF", Sub: "User Plane Function", Spec: "TS 29.244", HealthURL: "http://127.0.0.1:8002/health"},
 			{ID: "gNB", Label: "gNB", Sub: "Next-Gen NodeB", Spec: "TS 38.413", HealthURL: "http://127.0.0.1:8003/health"},
+			{ID: "UDM", Label: "UDM", Sub: "Unified Data Management", Spec: "TS 29.503", HealthURL: "http://127.0.0.1:8004/health"},
 		},
 	}
 }

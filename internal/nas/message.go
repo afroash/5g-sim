@@ -434,6 +434,24 @@ func DecodePDUSessionEstablishmentAccept(data []byte) (*PDUSessionEstablishmentA
 
 // --- Helpers ---
 
+// DecodeSUPIFromMobileIdentity extracts SUPI from a Registration Request mobile identity
+// (null-scheme SUCI produced by encodeSUPI).
+// Ref: TS 24.501 §9.11.3.4
+func DecodeSUPIFromMobileIdentity(identity []byte) (SUPI, error) {
+	if len(identity) < 9 {
+		return "", fmt.Errorf("mobile identity too short (%d bytes)", len(identity))
+	}
+	if identity[0]&0x07 != 0x01 {
+		return "", fmt.Errorf("unsupported mobile identity type 0x%02x", identity[0]&0x07)
+	}
+	msin, err := decodeMSIN(identity[8:])
+	if err != nil {
+		return "", err
+	}
+	// PLMN matches encodeSUPI test PLMN 001-01
+	return SUPI("imsi-00101" + msin), nil
+}
+
 // encodeSUPI encodes a SUPI (e.g. "imsi-001010000000001") as a 5G mobile identity.
 // Format: SUCI (Subscription Concealed Identifier) with null-scheme (no concealment).
 // Ref: TS 24.501 §9.11.3.4, TS 23.003 §2.2B
@@ -483,6 +501,25 @@ func encodeMSIN(msin string) []byte {
 		result = append(result, b)
 	}
 	return result
+}
+
+// decodeMSIN decodes BCD MSIN digits from mobile identity tail bytes.
+func decodeMSIN(data []byte) (string, error) {
+	var digits []byte
+	for _, b := range data {
+		lo := b & 0x0F
+		hi := (b >> 4) & 0x0F
+		if lo <= 9 {
+			digits = append(digits, '0'+lo)
+		}
+		if hi <= 9 {
+			digits = append(digits, '0'+hi)
+		}
+	}
+	if len(digits) == 0 {
+		return "", fmt.Errorf("empty MSIN in mobile identity")
+	}
+	return string(digits), nil
 }
 
 // encodeGUTI encodes a 5G-GUTI as bytes.

@@ -14,12 +14,14 @@ package ue
 import (
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/ishidawataru/sctp"
 
 	sctptransport "github.com/afroash/5g-sim/internal/sctp"
 	"github.com/afroash/5g-sim/internal/nas"
+	"github.com/afroash/5g-sim/internal/udm"
 )
 
 // Start connects to the gNB and drives UE registration and PDU session setup.
@@ -28,6 +30,13 @@ import (
 func (u *UE) Start() error {
 	fmt.Printf("[UE] Starting — SUPI: %s  gNB: %s:%d\n",
 		u.config.SUPI, u.config.GNBAddress, u.config.GNBSCTPPort)
+
+	if addr := strings.TrimSpace(u.config.UDMAddress); addr != "" {
+		if _, err := udm.NewClient(addr).GetSubscription(u.config.SUPI); err != nil {
+			return fmt.Errorf("ue: subscriber not provisioned in UDM: %w", err)
+		}
+		fmt.Printf("[UE] UDM subscriber check OK for %s\n", u.config.SUPI)
+	}
 
 	if err := u.connectToGNB(); err != nil {
 		return fmt.Errorf("ue: connect to gNB: %w", err)

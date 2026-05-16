@@ -221,9 +221,10 @@ cd web/observatory && npm install && npm run build
 # Terminal 0 — observatory (HTTP + WebSocket on :9090)
 go run ./cmd/observatory
 
-# Terminals 1–6 — enable event streaming, then start NFs in order
+# Terminals 1–7 — enable event streaming, then start NFs in order
 export OBSERVATORY_URL=http://127.0.0.1:9090
 go run ./cmd/nrf
+go run ./cmd/udm        # subscriber allowlist — configs/subscribers.yaml
 go run ./cmd/smf
 go run ./cmd/amf
 go run ./cmd/upf
@@ -253,12 +254,15 @@ Config: [`configs/observatory.yaml`](configs/observatory.yaml). Without `OBSERVA
 
 ```bash
 go run ./cmd/nrf
+go run ./cmd/udm
 go run ./cmd/smf
 go run ./cmd/amf
 go run ./cmd/upf
 go run ./cmd/gnb
 go run ./cmd/ue
 ```
+
+**UDM / subscribers:** provision UEs in [`configs/subscribers.yaml`](configs/subscribers.yaml). The AMF calls **Nudm_UECM** during registration; unknown SUPIs are rejected. The UE binary optionally pre-checks UDM before SCTP attach (`udm_address` in UE config).
 
 ---
 

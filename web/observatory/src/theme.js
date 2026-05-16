@@ -25,6 +25,7 @@ export const NF_NODES = [
   { id: "NRF", label: "NRF", sub: "Network Repository Function", x: 420, y: 95, color: C.purple, spec: "TS 29.510" },
   { id: "AMF", label: "AMF", sub: "Access & Mobility Management", x: 180, y: 215, color: C.accent, spec: "TS 29.518" },
   { id: "SMF", label: "SMF", sub: "Session Management Function", x: 420, y: 215, color: C.green, spec: "TS 29.502" },
+  { id: "UDM", label: "UDM", sub: "Unified Data Management", x: 660, y: 215, color: C.red, spec: "TS 29.503" },
   { id: "UPF", label: "UPF", sub: "User Plane Function", x: 420, y: 355, color: C.amber, spec: "TS 29.244" },
   { id: "gNB", label: "gNB", sub: "Next-Gen NodeB", x: 180, y: 355, color: C.text, spec: "TS 38.413" },
 ];
@@ -33,8 +34,10 @@ export const NF_EDGES = [
   ["gNB", "AMF"],
   ["AMF", "NRF"],
   ["AMF", "SMF"],
+  ["AMF", "UDM"],
   ["SMF", "UPF"],
   ["NRF", "SMF"],
+  ["NRF", "UDM"],
 ];
 
 export function nfColor(id) {

@@ -44,6 +44,13 @@ type Config struct {
 	// Ref: TS 29.502 — Nsmf_PDUSession service
 	SMFAddress string `yaml:"smf_address"`
 
+	// UDMAddress is the N8 base URL for Nudm_UECM.
+	// Ref: TS 29.503 — Nudm_UECM
+	UDMAddress string `yaml:"udm_address"`
+
+	// InstanceID is this AMF's identifier for UDM registration.
+	InstanceID string `yaml:"instance_id"`
+
 	// HTTPPort is the port for the health check endpoint.
 	HTTPPort int `yaml:"http_port"`
 }
@@ -59,6 +66,8 @@ func DefaultConfig() Config {
 		Pointer:     0,
 		SCTPPort:    38412,
 		SMFAddress:  "http://127.0.0.1:8001",
+		UDMAddress:  "http://127.0.0.1:8004",
+		InstanceID:  "amf-sim-001",
 		HTTPPort:    8090,
 	}
 }

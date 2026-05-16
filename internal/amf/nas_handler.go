@@ -94,8 +94,8 @@ func (a *AMF) HandleInitialUEMessage(conn net.Conn, pdu *ngapType.NGAPPDU) {
 		return
 	}
 
-	// Route the NAS message to the right handler
-	a.routeNASMessage(conn, ran, ranUeNgapID, nasPayload)
+	// Route the NAS message to the right handler (no UE context yet on first message).
+	a.routeNASMessage(conn, ran, nil, ranUeNgapID, nasPayload)
 }
 
 // HandleUplinkNASTransport processes subsequent NAS messages from a UE
@@ -140,12 +140,12 @@ func (a *AMF) HandleUplinkNASTransport(conn net.Conn, pdu *ngapType.NGAPPDU) {
 		return
 	}
 
-	a.routeNASMessage(conn, ran, ue.AMFUeNgapID, nasPayload)
+	a.routeNASMessage(conn, ran, ue, ue.RANUeNgapID, nasPayload)
 }
 
 // routeNASMessage decodes a NAS message header and dispatches to the
 // appropriate procedure handler.
-func (a *AMF) routeNASMessage(conn net.Conn, ran *RAN, ranUeNgapID int64, nasPayload []byte) {
+func (a *AMF) routeNASMessage(conn net.Conn, ran *RAN, ue *UEContext, ranUeNgapID int64, nasPayload []byte) {
 	msg, err := nas.Decode(nasPayload)
 	if err != nil {
 		fmt.Printf("[AMF] NAS decode error: %v\n", err)
@@ -158,7 +158,7 @@ func (a *AMF) routeNASMessage(conn net.Conn, ran *RAN, ranUeNgapID int64, nasPay
 	case nas.MsgTypeRegistrationRequest:
 		a.handleRegistrationRequest(conn, ran, ranUeNgapID, msg)
 	case nas.MsgTypeRegistrationComplete:
-		a.handleRegistrationComplete(conn, msg)
+		a.handleRegistrationComplete(conn, ue, msg)
 
 	// NAS SM messages arrive wrapped in UL NAS Transport (MM type 0x67)
 	// Ref: TS 24.501 §8.2.14
@@ -196,6 +196,36 @@ func (a *AMF) handleRegistrationRequest(conn net.Conn, ran *RAN, ranUeNgapID int
 	fmt.Printf("[AMF]   Registration type: %d  Follow-on: %v\n",
 		req.RegistrationType, req.FollowOnRequest)
 
+	supi, err := nas.DecodeSUPIFromMobileIdentity(req.MobileIdentity)
+	if err != nil {
+		fmt.Printf("[AMF]   Failed to decode SUPI: %v\n", err)
+		nasReject := nas.BuildRegistrationReject(nas.CauseUEIdentityNotDerived)
+		_ = a.sendDownlinkNASTransport(conn, 0, ranUeNgapID, nasReject)
+		return
+	}
+	fmt.Printf("[AMF]   SUPI: %s\n", supi)
+
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeAMF, seqdiag.NodeUDM,
+			"Nudm_UECM_Registration", "TS 29.503 §5.3.2",
+			"supi", string(supi))
+	}
+	subData, err := a.udmRegister(string(supi))
+	if err != nil {
+		fmt.Printf("[AMF]   UDM rejected registration: %v\n", err)
+		if a.Hub != nil {
+			a.Hub.Procedure(seqdiag.NodeUDM, seqdiag.NodeAMF,
+				"404 Not Found (unknown subscriber)", "TS 29.503")
+		}
+		nasReject := nas.BuildRegistrationReject(nas.CauseIllegalUE)
+		_ = a.sendDownlinkNASTransport(conn, 0, ranUeNgapID, nasReject)
+		return
+	}
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeUDM, seqdiag.NodeAMF,
+			"201 Created (subscription confirmed)", "TS 29.503")
+	}
+
 	// Assign a new 5G-GUTI for this UE
 	guti, err := a.AllocateGUTI()
 	if err != nil {
@@ -211,10 +241,12 @@ func (a *AMF) handleRegistrationRequest(conn net.Conn, ran *RAN, ranUeNgapID int
 
 	// Create UE context in the AMF
 	ue := &UEContext{
-		SUPI:             fmt.Sprintf("imsi-sim-%d", a.ues.Count()+1),
+		SUPI:             string(supi),
 		GUTI:             guti,
 		RAN:              ran,
+		RANUeNgapID:      ranUeNgapID,
 		AllowedNSSAI:     allowedNSSAI,
+		AllowedDnns:      subData.AllowedDnns,
 		RegistrationType: req.RegistrationType,
 		State:            UEStateRegistering,
 		RegisteredAt:     time.Now(),
@@ -244,10 +276,18 @@ func (a *AMF) handleRegistrationRequest(conn net.Conn, ran *RAN, ranUeNgapID int
 // handleRegistrationComplete processes NAS Registration Complete from the UE.
 // The UE sends this to confirm it has stored the new GUTI.
 // Ref: TS 23.502 §4.2.2.2.2 step 18
-func (a *AMF) handleRegistrationComplete(_ net.Conn, msg *nas.Message) {
-	fmt.Println("[AMF]   Received Registration Complete — UE registration done ✓")
-	// In a full implementation: mark UE as REGISTERED, notify UDM, start T3512 timer
+func (a *AMF) handleRegistrationComplete(_ net.Conn, ue *UEContext, msg *nas.Message) {
 	_ = msg
+	if ue == nil {
+		fmt.Println("[AMF]   Registration Complete (no UE context)")
+		return
+	}
+	ue.State = UEStateRegistered
+	fmt.Printf("[AMF]   Registration Complete — UE %s REGISTERED ✓\n", ue.SUPI)
+	if a.Hub != nil {
+		a.Hub.Procedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
+			"N2: Registration Complete", "TS 38.413 §9.2.5.3")
+	}
 }
 
 // sendDownlinkNASTransport wraps a NAS message in an NGAP DownlinkNASTransport
