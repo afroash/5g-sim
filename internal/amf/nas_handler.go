@@ -182,10 +182,6 @@ func (a *AMF) routeNASMessage(conn net.Conn, ran *RAN, ue *UEContext, ranUeNgapI
 // Ref: TS 23.502 §4.2.2.2
 func (a *AMF) handleRegistrationRequest(conn net.Conn, ran *RAN, ranUeNgapID int64, msg *nas.Message) {
 	fmt.Println("[AMF]   Processing Registration Request")
-	if a.Hub != nil {
-		a.Hub.Procedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
-			"InitialUEMessage (Registration Request)", "TS 38.413 §9.2.5.1")
-	}
 
 	req, err := nas.DecodeRegistrationRequest(msg.Payload)
 	if err != nil {
@@ -222,10 +218,10 @@ func (a *AMF) handleRegistrationRequest(conn net.Conn, ran *RAN, ranUeNgapID int
 		return
 	}
 	if a.Hub != nil {
-		a.Hub.Procedure(seqdiag.NodeUDM, seqdiag.NodeAMF,
-			"201 Created (subscription confirmed)", "TS 29.503")
+		a.Hub.ProcedureWithDetail(seqdiag.NodeUDM, seqdiag.NodeAMF,
+			"204 No Content", "Registration confirmed", "TS 29.503",
+			"supi", string(supi))
 	}
-
 	// Assign a new 5G-GUTI for this UE
 	guti, err := a.AllocateGUTI()
 	if err != nil {
@@ -262,6 +258,12 @@ func (a *AMF) handleRegistrationRequest(conn net.Conn, ran *RAN, ranUeNgapID int
 		guti,
 		allowedNSSAI,
 	)
+
+	if a.Hub != nil {
+		a.Hub.ProcedureWithDetail(seqdiag.NodeAMF, seqdiag.NodeGNB,
+			"N2: Initial Context Setup", "SecurityCapabilities + NAS", "TS 38.413 §9.2.1.1",
+			"supi", string(supi))
+	}
 
 	// Wrap in NGAP DownlinkNASTransport and send to gNB
 	// Ref: TS 38.413 §9.2.5.2

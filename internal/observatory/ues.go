@@ -53,12 +53,13 @@ type AMFUESnapshot struct {
 	UEs []AMFUE `json:"ues"`
 }
 
-// UEManager tracks spawned UE processes and merges AMF state.
+// UEManager tracks UE instances via the UE supervisor and merges AMF state.
 type UEManager struct {
 	cfg        Config
 	client     *http.Client
+	supervisor *supervisorClient
 	mu         sync.Mutex
-	spawned    map[string]*spawnedUE
+	spawned    map[string]*spawnedUE // legacy exec fallback only
 	nextSerial int
 }
 
@@ -69,16 +70,30 @@ type spawnedUE struct {
 
 // NewUEManager creates a UE spawn tracker.
 func NewUEManager(cfg Config) *UEManager {
+	var sup *supervisorClient
+	if cfg.UESupervisorURL != "" {
+		sup = newSupervisorClient(cfg.UESupervisorURL)
+	}
 	return &UEManager{
-		cfg:     cfg,
-		client:  &http.Client{Timeout: 2 * time.Second},
-		spawned: make(map[string]*spawnedUE),
+		cfg:        cfg,
+		client:     &http.Client{Timeout: 2 * time.Second},
+		supervisor: sup,
+		spawned:    make(map[string]*spawnedUE),
 	}
 }
 
-// List returns AMF UEs plus locally spawned processes.
+// List returns supervisor/AMF UEs (merged by SUPI).
 func (m *UEManager) List(ctx context.Context) ([]UERecord, error) {
 	var out []UERecord
+
+	if m.supervisor != nil && m.supervisor.available() {
+		insts, err := m.supervisor.list(ctx)
+		if err == nil {
+			for _, inst := range insts {
+				out = append(out, instanceToUERecord(inst))
+			}
+		}
+	}
 
 	if m.cfg.AMFObsURL != "" {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.AMFObsURL, nil)
@@ -89,21 +104,14 @@ func (m *UEManager) List(ctx context.Context) ([]UERecord, error) {
 				if resp.StatusCode == http.StatusOK {
 					var snap AMFUESnapshot
 					if json.NewDecoder(resp.Body).Decode(&snap) == nil {
-						for i, u := range snap.UEs {
-							imsi := u.SUPI
-							if len(imsi) > 5 && imsi[:5] == "imsi-" {
-								imsi = imsi[5:]
-							}
-							out = append(out, UERecord{
-								ID:         fmt.Sprintf("UE-%03d", i+1),
-								IMSI:       imsi,
-								State:      u.State,
-								IP:         u.AllocatedIP,
-								GNB:        "gNB",
-								PDUSession: u.SMContextRef,
-								Source:     "amf",
-							})
+					for i, u := range snap.UEs {
+						rec := amfUEToRecord(i, u)
+						if idx := findUERecordBySUPI(out, u.SUPI); idx >= 0 {
+							mergeAMFIntoRecord(&out[idx], rec)
+						} else {
+							out = append(out, rec)
 						}
+					}
 					}
 				}
 			}
@@ -144,7 +152,7 @@ func ParseSpawnUEBody(raw []byte) (SpawnUEOptions, error) {
 	return req, nil
 }
 
-// Spawn starts a UE subprocess with a generated or caller-supplied SUPI and connection profile.
+// Spawn starts a UE via the supervisor API, or falls back to a local subprocess.
 func (m *UEManager) Spawn(ctx context.Context, opts SpawnUEOptions) (UERecord, error) {
 	profile := strings.ToLower(strings.TrimSpace(opts.Profile))
 	if profile == "" {
@@ -152,6 +160,14 @@ func (m *UEManager) Spawn(ctx context.Context, opts SpawnUEOptions) (UERecord, e
 	}
 	if _, err := ue.BaseConfigForProfile(profile); err != nil {
 		return UERecord{}, err
+	}
+
+	if m.supervisor != nil && m.supervisor.available() {
+		inst, err := m.supervisor.spawn(ctx, opts)
+		if err != nil {
+			return UERecord{}, err
+		}
+		return instanceToUERecord(inst), nil
 	}
 
 	m.mu.Lock()
@@ -177,9 +193,9 @@ func (m *UEManager) Spawn(ctx context.Context, opts SpawnUEOptions) (UERecord, e
 		root, _ = os.Getwd()
 	}
 
-	cmd := exec.CommandContext(ctx, "go", "run", "./cmd/ue", "-config", cfgPath)
+	cmd := exec.CommandContext(ctx, "go", "run", "./cmd/ue", "-instance", "-config", cfgPath)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "OBSERVATORY_URL=") // avoid feedback loop from UE logs if any
+	cmd.Env = os.Environ()
 
 	if err := cmd.Start(); err != nil {
 		return UERecord{}, fmt.Errorf("spawn ue: %w", err)
@@ -212,8 +228,11 @@ func (m *UEManager) Spawn(ctx context.Context, opts SpawnUEOptions) (UERecord, e
 	return rec, nil
 }
 
-// Stop terminates a spawned UE by id.
+// Stop terminates a UE via the supervisor or local subprocess map.
 func (m *UEManager) Stop(id string) error {
+	if m.supervisor != nil && m.supervisor.available() {
+		return m.supervisor.stop(context.Background(), id)
+	}
 	m.mu.Lock()
 	s, ok := m.spawned[id]
 	if !ok {
@@ -227,6 +246,67 @@ func (m *UEManager) Stop(id string) error {
 		return nil
 	}
 	return cmd.Process.Signal(syscall.SIGTERM)
+}
+
+// EnsureDefaultUE spawns the default UE via supervisor when configured and none exist.
+func (m *UEManager) EnsureDefaultUE(ctx context.Context) error {
+	if !m.cfg.AutoSpawnDefaultUE {
+		return nil
+	}
+	if m.supervisor == nil || !m.supervisor.available() {
+		return nil
+	}
+	list, err := m.supervisor.list(ctx)
+	if err != nil {
+		return err
+	}
+	if len(list) > 0 {
+		return nil
+	}
+	prof := m.cfg.DefaultUEProfile
+	if prof == "" {
+		prof = ue.ProfileLocal
+	}
+	_, err = m.supervisor.spawn(ctx, SpawnUEOptions{Profile: prof, SUPI: "imsi-001010000000001"})
+	return err
+}
+
+func amfUEToRecord(i int, u AMFUE) UERecord {
+	imsi := u.SUPI
+	if len(imsi) > 5 && imsi[:5] == "imsi-" {
+		imsi = imsi[5:]
+	}
+	return UERecord{
+		ID:         fmt.Sprintf("UE-%03d", i+1),
+		IMSI:       imsi,
+		State:      u.State,
+		IP:         u.AllocatedIP,
+		GNB:        "gNB",
+		PDUSession: u.SMContextRef,
+		Source:     "amf",
+	}
+}
+
+func findUERecordBySUPI(list []UERecord, supi string) int {
+	digits := imsiDigitsWithoutPrefix(supi)
+	for i, r := range list {
+		if r.IMSI == digits || r.IMSI == supi {
+			return i
+		}
+	}
+	return -1
+}
+
+func mergeAMFIntoRecord(dst *UERecord, amf UERecord) {
+	if dst.IP == "" && amf.IP != "" {
+		dst.IP = amf.IP
+	}
+	if amf.State == "REGISTERED" || amf.State == "PDU_ACTIVE" {
+		dst.State = amf.State
+	}
+	if dst.PDUSession == "" {
+		dst.PDUSession = amf.PDUSession
+	}
 }
 
 func imsiDigitsWithoutPrefix(supi string) string {

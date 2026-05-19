@@ -28,9 +28,11 @@ export const NF_NODES = [
   { id: "UDM", label: "UDM", sub: "Unified Data Management", x: 660, y: 215, color: C.red, spec: "TS 29.503" },
   { id: "UPF", label: "UPF", sub: "User Plane Function", x: 420, y: 355, color: C.amber, spec: "TS 29.244" },
   { id: "gNB", label: "gNB", sub: "Next-Gen NodeB", x: 180, y: 355, color: C.text, spec: "TS 38.413" },
+  { id: "UE", label: "UE", sub: "User Equipment", x: 40, y: 355, color: C.text, spec: "TS 38.331" },
 ];
 
 export const NF_EDGES = [
+  ["UE", "gNB"],
   ["gNB", "AMF"],
   ["AMF", "NRF"],
   ["AMF", "SMF"],

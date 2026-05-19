@@ -427,6 +427,10 @@ func DecodePDUSessionEstablishmentAccept(data []byte) (*PDUSessionEstablishmentA
 			}
 		case 0x25: // DNN
 			acc.DNN = decodeDNN(ieData)
+		case IEIUserPlaneDLTEID: // simulator DL GTP-U TEID
+			if len(ieData) >= 4 {
+				acc.DownlinkTEID = binary.BigEndian.Uint32(ieData[:4])
+			}
 		}
 	}
 	return acc, nil

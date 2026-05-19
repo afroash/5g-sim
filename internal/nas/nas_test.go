@@ -222,6 +222,22 @@ func TestDecodeDLNASTransport_TooShort(t *testing.T) {
 // TestDecodePDUSessionEstablishmentAccept verifies that BuildPDUSessionEstablishmentAccept
 // and DecodePDUSessionEstablishmentAccept round-trip the IP and DNN.
 // Ref: TS 24.501 §8.3.2
+func TestAppendDownlinkTEID(t *testing.T) {
+	const pduSessionID = 1
+	allocatedIP := "10.45.0.2"
+	dnn := "internet"
+	encoded := BuildPDUSessionEstablishmentAccept(pduSessionID, allocatedIP, dnn)
+	encoded = AppendDownlinkTEID(encoded, 0x00000042)
+
+	acc, err := DecodePDUSessionEstablishmentAccept(encoded)
+	if err != nil {
+		t.Fatalf("DecodePDUSessionEstablishmentAccept: %v", err)
+	}
+	if acc.DownlinkTEID != 0x42 {
+		t.Fatalf("DownlinkTEID = 0x%X, want 0x42", acc.DownlinkTEID)
+	}
+}
+
 func TestDecodePDUSessionEstablishmentAccept(t *testing.T) {
 	const (
 		pduSessionID = uint8(1)

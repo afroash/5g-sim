@@ -21,6 +21,9 @@ type Config struct {
 	BindAddress string       `yaml:"bind_address"`
 	Port        int          `yaml:"port"`
 	AMFObsURL   string       `yaml:"amf_obs_url"`
+	UESupervisorURL string   `yaml:"ue_supervisor_url"`
+	AutoSpawnDefaultUE bool  `yaml:"auto_spawn_default_ue"`
+	DefaultUEProfile   string `yaml:"default_ue_profile"`
 	RepoRoot    string       `yaml:"repo_root"`
 	NFs         []NFEndpoint `yaml:"nfs"`
 	EventBuffer int          `yaml:"event_buffer"`
@@ -29,10 +32,13 @@ type Config struct {
 // DefaultConfig returns settings for local NF simulation.
 func DefaultConfig() Config {
 	return Config{
-		BindAddress: "127.0.0.1",
-		Port:        9090,
-		AMFObsURL:   "http://127.0.0.1:8090/obs/v1/ues",
-		EventBuffer: 500,
+		BindAddress:        "127.0.0.1",
+		Port:               9090,
+		AMFObsURL:          "http://127.0.0.1:8090/obs/v1/ues",
+		UESupervisorURL:    "http://127.0.0.1:9080",
+		AutoSpawnDefaultUE: true,
+		DefaultUEProfile:   "local",
+		EventBuffer:        500,
 		NFs: []NFEndpoint{
 			{ID: "NRF", Label: "NRF", Sub: "Network Repository Function", Spec: "TS 29.510", HealthURL: "http://127.0.0.1:8000/health"},
 			{ID: "AMF", Label: "AMF", Sub: "Access & Mobility Management", Spec: "TS 29.518", HealthURL: "http://127.0.0.1:8090/health"},

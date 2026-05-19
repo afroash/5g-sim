@@ -173,6 +173,7 @@ func (s *SMF) createSMContext(w http.ResponseWriter, r *http.Request) {
 	if req.Dnn == "" {
 		req.Dnn = "internet"
 	}
+	emitCreateSMContext(req.Supi, req.Dnn)
 
 	// Allocate an IP address from the pool
 	// Ref: TS 23.502 §4.3.2.2.1 step 4 — SMF selects UPF and allocates IP
@@ -235,6 +236,8 @@ func (s *SMF) createSMContext(w http.ResponseWriter, r *http.Request) {
 	if err := pfcp.EstablishSession(pfcpReq); err != nil {
 		// Non-fatal: UPF may not be running, packets will be dropped but session proceeds
 		fmt.Printf("[SMF] PFCP notify failed (UPF may not be running): %v\n", err)
+	} else {
+		emitPFCPProcedure(req.Supi, ulTEID, ip)
 	}
 
 	// 201 Created — new resource

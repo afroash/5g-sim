@@ -1,0 +1,12 @@
+{"ts":"2026-05-19T01:40:24.160308868+01:00","component":"UE","level":"INFO ","msg":"→ gNB: RRC Setup Complete","specRef":"TS 38.331 §5.3.3.4"}
+{"ts":"2026-05-19T01:40:24.16191848+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: N2: Initial UE Message","specRef":"TS 38.413 §9.2.5.1"}
+{"ts":"2026-05-19T01:40:24.166162628+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: N2: Downlink NAS Transport","specRef":"TS 38.413 §9.2.5.2"}
+{"ts":"2026-05-19T01:40:24.16623584+01:00","component":"gNB","level":"INFO ","msg":"→ UE: RRC DL Information Transfer","specRef":"TS 38.331 §5.3.3.5"}
+{"ts":"2026-05-19T01:40:24.372378951+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: N2: Downlink NAS Transport","specRef":"TS 38.413 §9.2.5.2"}
+{"ts":"2026-05-19T01:40:24.372433898+01:00","component":"gNB","level":"INFO ","msg":"→ UE: RRC DL Information Transfer","specRef":"TS 38.331 §5.3.3.5"}
+{"ts":"2026-05-19T01:41:17.608690193+01:00","component":"UE","level":"INFO ","msg":"→ gNB: RRC Setup Complete","specRef":"TS 38.331 §5.3.3.4"}
+{"ts":"2026-05-19T01:41:17.609471617+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: N2: Initial UE Message","specRef":"TS 38.413 §9.2.5.1"}
+{"ts":"2026-05-19T01:41:17.610830476+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: N2: Downlink NAS Transport","specRef":"TS 38.413 §9.2.5.2"}
+{"ts":"2026-05-19T01:41:17.610892664+01:00","component":"gNB","level":"INFO ","msg":"→ UE: RRC DL Information Transfer","specRef":"TS 38.331 §5.3.3.5"}
+{"ts":"2026-05-19T01:41:17.816323243+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: N2: Downlink NAS Transport","specRef":"TS 38.413 §9.2.5.2"}
+{"ts":"2026-05-19T01:41:17.81641062+01:00","component":"gNB","level":"INFO ","msg":"→ UE: RRC DL Information Transfer","specRef":"TS 38.331 §5.3.3.5"}

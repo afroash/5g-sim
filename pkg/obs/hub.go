@@ -132,18 +132,23 @@ func (h *Hub) MakeCaptureFunc(from, to string) func(direction string, data []byt
 
 // Procedure records a 5G procedure event for the sequence diagram and log.
 func (h *Hub) Procedure(from, to seqdiag.Node, label, specRef string, kvpairs ...string) {
-	h.seq.Message(from, to, label, specRef)
+	h.ProcedureWithDetail(from, to, label, label, specRef, kvpairs...)
+}
+
+// ProcedureWithDetail records a procedure step with separate GUI type and detail strings.
+func (h *Hub) ProcedureWithDetail(from, to seqdiag.Node, typ, detail, specRef string, kvpairs ...string) {
+	h.seq.Message(from, to, typ, specRef)
 
 	fields := make(map[string]string)
 	for i := 0; i+1 < len(kvpairs); i += 2 {
 		fields[kvpairs[i]] = kvpairs[i+1]
 	}
 	if obspub.Enabled() {
-		obspub.Emit(obspub.FromProcedure(from, to, label, specRef, fields))
+		obspub.ProcedureWithDetail(from, to, typ, detail, specRef, fields)
 	}
 
 	obslog.New(string(from)).Info(
-		fmt.Sprintf("→ %s: %s", string(to), label),
+		fmt.Sprintf("→ %s: %s", string(to), typ),
 		specRef,
 		kvpairs...,
 	)

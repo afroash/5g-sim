@@ -48,6 +48,9 @@ func main() {
 	go poller.Run(ctx, 2*time.Second)
 
 	ues := observatory.NewUEManager(cfg)
+	if err := ues.EnsureDefaultUE(ctx); err != nil {
+		fmt.Printf("[observatory] default UE: %v\n", err)
+	}
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()

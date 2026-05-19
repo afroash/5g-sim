@@ -26,8 +26,12 @@ import (
 // allocatedIP is dotted-decimal, e.g. "10.45.0.2".
 // Ref: Linux TUN/TAP driver
 func (u *UE) setupTUN(allocatedIP string) error {
+	tunName := u.config.TunName
+	if tunName == "" {
+		tunName = "ue0"
+	}
 	cfg := water.Config{DeviceType: water.TUN}
-	cfg.Name = "ue0"
+	cfg.Name = tunName
 	iface, err := water.New(cfg)
 	if err != nil {
 		return fmt.Errorf("ue: create TUN: %w", err)
@@ -64,10 +68,13 @@ func (u *UE) setupTUN(allocatedIP string) error {
 	}
 	u.tunnel = tunnel
 
-	// Register handler for downlink GTP-U packets (TEID = PDU session ID = 1).
-	// Injects decapsulated IP packets back into the TUN.
+	dlTEID := u.downlinkTEID
+	if dlTEID == 0 {
+		dlTEID = 1
+	}
+	// Register handler for downlink GTP-U packets (TEID from gNB via NAS accept).
 	// Ref: TS 29.281 §5.1
-	tunnel.RegisterTEID(1, func(_ uint32, _ *net.UDPAddr, innerPkt []byte) {
+	tunnel.RegisterTEID(dlTEID, func(_ uint32, _ *net.UDPAddr, innerPkt []byte) {
 		if _, err := iface.Write(innerPkt); err != nil {
 			fmt.Printf("[UE] TUN write error: %v\n", err)
 		}
@@ -119,7 +126,11 @@ func (u *UE) tunUplinkLoop(iface *water.Interface) {
 		pkt := make([]byte, n)
 		copy(pkt, buf[:n])
 
-		if err := u.tunnel.SendGPDU(gnbGTPAddr, 1, pkt); err != nil {
+		ulTEID := u.uplinkTEID
+		if ulTEID == 0 {
+			ulTEID = 1
+		}
+		if err := u.tunnel.SendGPDU(gnbGTPAddr, ulTEID, pkt); err != nil {
 			fmt.Printf("[UE] GTP-U uplink error: %v\n", err)
 		}
 	}

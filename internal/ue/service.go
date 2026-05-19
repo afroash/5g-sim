@@ -12,6 +12,8 @@
 package ue
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -22,15 +24,27 @@ import (
 	sctptransport "github.com/afroash/5g-sim/internal/sctp"
 	"github.com/afroash/5g-sim/internal/nas"
 	"github.com/afroash/5g-sim/internal/udm"
+	"github.com/afroash/5g-sim/pkg/obspub"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
 // Start connects to the gNB and drives UE registration and PDU session setup.
 // Blocks until the session is established, then stays alive for manual testing.
 // Ref: TS 23.502 §4.2.2, §4.3.2
 func (u *UE) Start() error {
+	return u.Run(context.Background())
+}
 
-	fmt.Printf("[UE] Starting — SUPI: %s  gNB: %s:%d\n",
-		u.config.SUPI, u.config.GNBAddress, u.config.GNBSCTPPort)
+// Run is like Start but respects ctx cancellation.
+func (u *UE) Run(ctx context.Context) error {
+	tag := u.config.SUPI
+	if u.config.InstanceID != "" {
+		tag = u.config.InstanceID + " " + tag
+	}
+	fmt.Printf("[UE] Starting — %s  gNB: %s:%d\n",
+		tag, u.config.GNBAddress, u.config.GNBSCTPPort)
+
+	u.setState(StateStarting)
 
 	if addr := strings.TrimSpace(u.config.UDMAddress); addr != "" {
 		if _, err := udm.NewClient(addr).GetSubscription(u.config.SUPI); err != nil {
@@ -39,9 +53,18 @@ func (u *UE) Start() error {
 		fmt.Printf("[UE] UDM subscriber check OK for %s\n", u.config.SUPI)
 	}
 
-	if err := u.connectToGNB(); err != nil {
+	if err := u.connectToGNB(ctx); err != nil {
+		u.setState(StateFailed)
+		if errors.Is(err, context.Canceled) {
+			fmt.Printf("[UE] %s attach cancelled before/during gNB connect: %v\n", tag, err)
+		}
 		return fmt.Errorf("ue: connect to gNB: %w", err)
 	}
+
+	u.setState(StateRegistering)
+	u.emitProcedure(seqdiag.NodeUE, seqdiag.NodeGNB,
+		"RRC Setup Request", "Initial RRC connection", "TS 38.331 §5.3.3.3",
+		map[string]string{"supi": u.config.SUPI})
 
 	// Kick off registration.
 	// Ref: TS 23.502 §4.2.2
@@ -56,12 +79,23 @@ func (u *UE) Start() error {
 	fmt.Printf("[UE] Registration Request sent (%d bytes)\n", len(nasReq))
 
 	// Run the receive loop — drives the procedure state machine.
-	return u.receiveLoop()
+	return u.receiveLoop(ctx)
+}
+
+func (u *UE) emitProcedure(from, to seqdiag.Node, typ, detail, spec string, fields map[string]string) {
+	if fields == nil {
+		fields = make(map[string]string)
+	}
+	if u.config.InstanceID != "" {
+		fields["ue_id"] = u.config.InstanceID
+	}
+	fields["supi"] = u.config.SUPI
+	obspub.ProcedureWithDetail(from, to, typ, detail, spec, fields)
 }
 
 // connectToGNB establishes an SCTP connection to the gNB's UE port with retries.
 // Ref: TS 38.412 §5.1 (adapted)
-func (u *UE) connectToGNB() error {
+func (u *UE) connectToGNB(ctx context.Context) error {
 	const maxAttempts = 15
 	const retryInterval = 5 * time.Second
 
@@ -71,6 +105,9 @@ func (u *UE) connectToGNB() error {
 	}
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		conn, err := sctp.DialSCTP("sctp", nil, addr)
 		if err == nil {
 			u.conn = conn
@@ -83,19 +120,33 @@ func (u *UE) connectToGNB() error {
 		}
 		fmt.Printf("[UE] gNB not reachable (%v), retry %d/%d in %s\n",
 			err, attempt, maxAttempts, retryInterval)
-		time.Sleep(retryInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(retryInterval):
+		}
 	}
 	return nil
 }
 
 // receiveLoop reads NAS messages from the gNB and drives the state machine.
-func (u *UE) receiveLoop() error {
+func (u *UE) receiveLoop(ctx context.Context) error {
 	buf := make([]byte, sctptransport.MaxMessageSize)
 	sctpConn := u.conn.(*sctp.SCTPConn)
 
 	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		_ = sctpConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, _, err := sctpConn.SCTPRead(buf)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
 			return fmt.Errorf("ue: gNB connection closed: %w", err)
 		}
 		payload := make([]byte, n)
@@ -157,6 +208,10 @@ func (u *UE) handleRegistrationAccept(raw []byte, msg *nas.Message) error {
 		return fmt.Errorf("ue: send PDU Session Establishment Request: %w", err)
 	}
 	fmt.Printf("[UE] PDU Session Establishment Request sent (DNN=%s)\n", u.config.DNN)
+	u.emitProcedure(seqdiag.NodeUE, seqdiag.NodeAMF,
+		"NAS: PDU Session Request", "DNN: "+u.config.DNN+", SST:1", "TS 24.501 §8.2.26",
+		map[string]string{"dnn": u.config.DNN})
+	u.setState(StateRegistered)
 	return nil
 }
 
@@ -198,10 +253,26 @@ func (u *UE) handlePDUSessionAccept(smPayload []byte) error {
 	}
 	// note: allocatedIP is given by SMF, if we are in clab, this is an ip that is routable,
 	// if we are just running the ue as a standalone, this ip not routable.
+	u.mu.Lock()
 	u.allocatedIP = acc.AllocatedIP
-	fmt.Printf("[UE] Allocated IP: %s  DNN: %s\n", u.allocatedIP, acc.DNN)
+	u.pduSessionID = acc.PDUSessionID
+	if acc.DownlinkTEID != 0 {
+		u.downlinkTEID = acc.DownlinkTEID
+	}
+	if acc.PDUSessionID != 0 {
+		u.uplinkTEID = uint32(acc.PDUSessionID)
+	}
+	dlTEID := u.downlinkTEID
+	ip := u.allocatedIP
+	u.mu.Unlock()
 
-	if u.allocatedIP == "" {
+	fmt.Printf("[UE] Allocated IP: %s  DNN: %s  DL-TEID=0x%08X\n", ip, acc.DNN, dlTEID)
+
+	u.emitProcedure(seqdiag.NodeAMF, seqdiag.NodeUE,
+		"NAS: PDU Session Accept", "UE IP: "+ip, "TS 24.501 §8.3.2",
+		map[string]string{"ip": ip})
+
+	if ip == "" {
 		fmt.Println("[UE] WARNING: no IP in accept — skipping TUN setup")
 		return nil
 	}
@@ -209,13 +280,14 @@ func (u *UE) handlePDUSessionAccept(smPayload []byte) error {
 	// while in clab this is a "real" int with a ip that is routable, if we are just running the ue as a standalone, 
 	// this is a TUN interface will not come up.
 	// TODO: we need to handle this case, and either use a "real" interface or a TUN interface.
-	if err := u.setupTUN(u.allocatedIP); err != nil {
+	if err := u.setupTUN(ip); err != nil {
 		fmt.Printf("[UE] TUN setup failed: %v\n", err)
 		// Non-fatal — manual testing still possible via ping from host
 	}
-	// note: the connectivity test is used in clab only, in standalone we will not have a internet-sim to test against.
-	// TODO: we need to handle this case, the ue at this point is allowed to send and receive data, we want to be able to
-	// visually see requests going to and from ue towards upf and the data network over the N6. 
+	u.setState(StatePDUActive)
+	if u.onPDUActive != nil {
+		u.onPDUActive(ip, dlTEID)
+	}
 	u.runConnectivityTest()
 	return nil
 }

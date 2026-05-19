@@ -7,3 +7,13 @@ sequenceDiagram
   participant UPF
   participant NRF
 
+  UE->gNB: RRC Setup Complete<br/><small>[TS 38.331 §5.3.3.4]</small> (+13206ms)
+  gNB->AMF: N2: Initial UE Message<br/><small>[TS 38.413 §9.2.5.1]</small> (+13207ms)
+  AMF->gNB: N2: Downlink NAS Transport<br/><small>[TS 38.413 §9.2.5.2]</small> (+13219ms)
+  gNB->UE: RRC DL Information Transfer<br/><small>[TS 38.331 §5.3.3.5]</small> (+13220ms)
+  AMF->gNB: N2: Downlink NAS Transport<br/><small>[TS 38.413 §9.2.5.2]</small> (+13427ms)
+  gNB->UE: RRC DL Information Transfer<br/><small>[TS 38.331 §5.3.3.5]</small> (+13427ms)
+  UE->gNB: RRC Setup Complete<br/><small>[TS 38.331 §5.3.3.4]</small> (+34704029ms)
+  gNB->AMF: N2: Initial UE Message<br/><small>[TS 38.413 §9.2.5.1]</small> (+34704030ms)
+  AMF->gNB: N2: Downlink NAS Transport<br/><small>[TS 38.413 §9.2.5.2]</small> (+34704032ms)
+  gNB->UE: RRC DL Information Transfer<br/><small>[TS 38.331 §5.3.3.5]</small> (+34704032ms)

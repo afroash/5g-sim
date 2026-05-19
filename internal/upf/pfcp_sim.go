@@ -18,6 +18,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+
+	"github.com/afroash/5g-sim/pkg/obspub"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
 // SessionRequest is the body the SMF sends to register a UE session.
@@ -108,6 +111,10 @@ func (u *UPF) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		u.RegisterSession(sess)
 		fmt.Printf("[UPF] PFCP-sim: session registered UL-TEID=0x%08X UE=%s gNB=%s\n",
 			req.ULTEID, req.UEIPAddress, req.GNBAddress)
+		obspub.ProcedureWithDetail(seqdiag.NodeUPF, seqdiag.NodeSMF,
+			"PFCP Session Est. Resp.", "TEID allocated: "+fmt.Sprintf("0x%08X", req.ULTEID),
+			"TS 29.244 §6.3.3",
+			map[string]string{"ue_ip": req.UEIPAddress, "ul_teid": fmt.Sprintf("0x%08X", req.ULTEID)})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

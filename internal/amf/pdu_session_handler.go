@@ -202,6 +202,7 @@ func (a *AMF) HandlePDUSessionResourceSetupResponse(conn net.Conn, pdu *ngapType
 		return
 	}
 
+	nasAccept = nas.AppendDownlinkTEID(nasAccept, dlTEID)
 	a.sendPDUSessionNASToUE(conn, ue, pduSessionID, nasAccept)
 	fmt.Printf("[AMF]   PDU Session complete: UE=%s IP=%s gNB-DL-TEID=0x%08X ✓\n",
 		ue.SUPI, ue.AllocatedIP, dlTEID)
@@ -210,9 +211,12 @@ func (a *AMF) HandlePDUSessionResourceSetupResponse(conn net.Conn, pdu *ngapType
 		a.Hub.Procedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
 			"PDUSessionResourceSetupResponse", "TS 38.413 §9.2.1.2",
 			"dl_teid", fmt.Sprintf("0x%08X", dlTEID))
-		a.Hub.Procedure(seqdiag.NodeAMF, seqdiag.NodeGNB,
-			"DownlinkNASTransport (PDU Session Estab Accept)", "TS 38.413 §9.2.5.2",
-			"ip", ue.AllocatedIP)
+		a.Hub.ProcedureWithDetail(seqdiag.NodeAMF, seqdiag.NodeGNB,
+			"DownlinkNASTransport (PDU Session Estab Accept)", "UE IP: "+ue.AllocatedIP,
+			"TS 38.413 §9.2.5.2", "ip", ue.AllocatedIP, "supi", ue.SUPI)
+		a.Hub.ProcedureWithDetail(seqdiag.NodeAMF, seqdiag.NodeUE,
+			"NAS: PDU Session Accept", "UE IP: "+ue.AllocatedIP, "TS 24.501 §8.3.2",
+			"ip", ue.AllocatedIP, "supi", ue.SUPI)
 	}
 }
 

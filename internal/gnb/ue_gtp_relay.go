@@ -53,10 +53,8 @@ func (g *GNB) startUEGTPRelay(port int) error {
 		tunnel.Capture = g.Hub.MakeCaptureFunc("UE", "gNB")
 	}
 
-	// TEID=1 is what the UE simulator sends on; see internal/ue/tun.go.
-	// TODO(multi-UE): allocate per-UE TEIDs when the UE side learns its TEID
-	// from the PDU Session Establishment Accept.
-	tunnel.RegisterTEID(1, g.handleUplinkFromUE)
+	// UEs may use TEID=1 (PDU session id) or per-session TEIDs; demux is by UDP src.
+	tunnel.RegisterDefaultHandler(g.handleUplinkFromUE)
 
 	g.mu.Lock()
 	g.ueRelay = tunnel

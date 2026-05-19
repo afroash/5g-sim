@@ -8,22 +8,3 @@ sequenceDiagram
   participant NRF
 
   Note over AMF: 5g-sim AMF started
-
-  rect rgb(240, 240, 240)
-    Note over UE,NRF: NG Setup [TS 38.413 §8.7.1]
-  end
-
-  gNB->AMF: NGSetupRequest<br/><small>[TS 38.413 §9.2.6.1]</small> (+22607ms)
-  AMF->gNB: NGSetupResponse<br/><small>[TS 38.413 §9.2.6.2]</small> (+22607ms)
-  gNB->AMF: InitialUEMessage (Registration Request)<br/><small>[TS 38.413 §9.2.5.1]</small> (+36267ms)
-
-  rect rgb(240, 240, 240)
-    Note over UE,NRF: PDU Session Establishment [TS 23.502 §4.3.2]
-  end
-
-  gNB->AMF: UplinkNASTransport (PDU Session Estab Request)<br/><small>[TS 38.413 §9.2.5.3]</small> (+36469ms)
-  AMF->SMF: Nsmf_PDUSession_CreateSMContext<br/><small>[TS 29.502 §5.2.2.2]</small> (+36470ms)
-  SMF->AMF: 201 Created (IP allocated)<br/><small>[TS 29.502 §6.1.6.3.2]</small> (+36475ms)
-  AMF->gNB: PDUSessionResourceSetupRequest<br/><small>[TS 38.413 §9.2.1.1]</small> (+36475ms)
-  gNB->AMF: PDUSessionResourceSetupResponse<br/><small>[TS 38.413 §9.2.1.2]</small> (+36477ms)
-  AMF->gNB: DownlinkNASTransport (PDU Session Estab Accept)<br/><small>[TS 38.413 §9.2.5.2]</small> (+36477ms)

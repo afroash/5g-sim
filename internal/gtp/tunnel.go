@@ -31,12 +31,13 @@ type EchoHandlerFunc func(src *net.UDPAddr, seqNum uint16)
 // Tunnel is a GTP-U UDP endpoint.
 // It multiplexes incoming packets by TEID to registered handlers.
 type Tunnel struct {
-	conn     *net.UDPConn
-	mu       sync.RWMutex
-	handlers map[uint32]HandlerFunc // TEID → handler
-	echo     EchoHandlerFunc
-	nextTEID uint32
-	Capture  CaptureFunc // optional — set by obs hub
+	conn            *net.UDPConn
+	mu              sync.RWMutex
+	handlers        map[uint32]HandlerFunc // TEID → handler
+	defaultHandler  HandlerFunc            // used when TEID has no specific handler
+	echo            EchoHandlerFunc
+	nextTEID        uint32
+	Capture         CaptureFunc // optional — set by obs hub
 }
 
 // NewTunnel creates and binds a GTP-U UDP socket on the given port.
@@ -89,6 +90,13 @@ func (t *Tunnel) DeregisterTEID(teid uint32) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.handlers, teid)
+}
+
+// RegisterDefaultHandler sets the fallback handler for G-PDUs with unregistered TEIDs.
+func (t *Tunnel) RegisterDefaultHandler(handler HandlerFunc) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.defaultHandler = handler
 }
 
 // SetEchoHandler registers a handler for Echo Requests.
@@ -168,6 +176,10 @@ func (t *Tunnel) dispatch(src *net.UDPAddr, data []byte) {
 		t.mu.RUnlock()
 
 		if !ok {
+			if t.defaultHandler != nil {
+				t.defaultHandler(pkt.Header.TEID, src, pkt.Payload)
+				return
+			}
 			fmt.Printf("[GTP-U] No handler for TEID 0x%08X (from %s)\n",
 				pkt.Header.TEID, src)
 			return

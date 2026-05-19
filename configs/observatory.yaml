@@ -2,6 +2,9 @@
 bind_address: 127.0.0.1
 port: 9090
 amf_obs_url: http://127.0.0.1:8090/obs/v1/ues
+ue_supervisor_url: http://127.0.0.1:9080
+auto_spawn_default_ue: true
+default_ue_profile: local
 event_buffer: 500
 
 nfs:

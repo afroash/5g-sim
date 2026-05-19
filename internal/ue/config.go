@@ -42,6 +42,15 @@ type Config struct {
 
 	// UDMAddress is optional; when set, UE verifies SUPI is provisioned before attach.
 	UDMAddress string `yaml:"udm_address"`
+
+	// InstanceID is the supervisor-assigned id (e.g. UE-001).
+	InstanceID string `yaml:"instance_id"`
+
+	// TunName is the kernel TUN device name (e.g. ue0, ue1).
+	TunName string `yaml:"tun_name"`
+
+	// UplinkTEID is the TEID used toward the gNB (default 1).
+	UplinkTEID uint32 `yaml:"uplink_teid"`
 }
 
 // SliceConfig identifies a 5G network slice.

@@ -17,7 +17,9 @@ import (
 
 	"github.com/ishidawataru/sctp"
 
+	"github.com/afroash/5g-sim/internal/nas"
 	sctptransport "github.com/afroash/5g-sim/internal/sctp"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
 // nextRanID is an atomic counter for RAN-UE-NGAP-ID allocation.
@@ -52,6 +54,8 @@ func (g *GNB) startUEListener() error {
 		g.uesByRanID[ranID] = ctx
 		g.mu.Unlock()
 		fmt.Printf("[gNB] UE connected — RAN-UE-NGAP-ID=%d from %s\n", ranID, conn.RemoteAddr())
+		g.obsProcedure(seqdiag.NodeUE, seqdiag.NodeGNB,
+			"RRC Setup Complete", "SCTP association established", "TS 38.331 §5.3.3.4", nil)
 		go g.handleUEConn(ctx)
 	}
 }
@@ -96,6 +100,7 @@ func (g *GNB) relayUplinkNAS(ctx *UERelayContext, nasPayload []byte) {
 	var err error
 	if ctx.FirstMsg {
 		ctx.FirstMsg = false
+		g.emitUplinkNASObs(nasPayload)
 		err = g.sendInitialUEMessage(ctx.RanUeNgapID, nasPayload, cfg.TAC, cfg.PLMN)
 	} else {
 		err = g.sendUplinkNASTransport(amfConn, amfUeNgapID, ctx.RanUeNgapID, nasPayload)
@@ -129,5 +134,45 @@ func (g *GNB) relayDownlinkNAS(ranUeNgapID, amfUeNgapID int64, nasPayload []byte
 	} else {
 		fmt.Printf("[gNB] AMF→UE: NAS %d bytes (RAN-UE-NGAP-ID=%d)\n",
 			len(nasPayload), ranUeNgapID)
+	}
+	g.emitDownlinkNASObs(nasPayload)
+}
+
+func (g *GNB) emitUplinkNASObs(nasPayload []byte) {
+	msg, err := nas.Decode(nasPayload)
+	if err != nil {
+		return
+	}
+	switch msg.MessageType {
+	case nas.MsgTypeRegistrationRequest:
+		g.obsProcedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
+			"N2: Initial UE Message", "NAS Registration Request", "TS 38.413 §9.2.5.1", nil)
+	case nas.MsgTypeRegistrationComplete:
+		g.obsProcedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
+			"N2: Uplink NAS Transport", "NAS Registration Complete", "TS 38.413 §9.2.5.3", nil)
+	default:
+		if msg.MessageType == 0x67 { // UL NAS Transport (PDU session, etc.)
+			g.obsProcedure(seqdiag.NodeGNB, seqdiag.NodeAMF,
+				"N2: Uplink NAS Transport", "NAS UL NAS Transport", "TS 38.413 §9.2.5.3", nil)
+		}
+	}
+}
+
+func (g *GNB) emitDownlinkNASObs(nasPayload []byte) {
+	msg, err := nas.Decode(nasPayload)
+	if err != nil {
+		return
+	}
+	switch msg.MessageType {
+	case nas.MsgTypeRegistrationAccept:
+		g.obsProcedure(seqdiag.NodeAMF, seqdiag.NodeGNB,
+			"N2: Downlink NAS Transport", "NAS Registration Accept", "TS 38.413 §9.2.5.2", nil)
+		g.obsProcedure(seqdiag.NodeGNB, seqdiag.NodeUE,
+			"RRC DL Information Transfer", "Deliver NAS Registration Accept", "TS 38.331 §5.3.3.5", nil)
+	case 0x68: // DL NAS Transport
+		g.obsProcedure(seqdiag.NodeAMF, seqdiag.NodeGNB,
+			"N2: Downlink NAS Transport", "NAS DL NAS Transport (SM)", "TS 38.413 §9.2.5.2", nil)
+		g.obsProcedure(seqdiag.NodeGNB, seqdiag.NodeUE,
+			"RRC DL Information Transfer", "Deliver NAS SM container", "TS 38.331 §5.3.3.5", nil)
 	}
 }

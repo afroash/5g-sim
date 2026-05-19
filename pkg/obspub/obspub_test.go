@@ -52,3 +52,35 @@ func TestFromProcedure(t *testing.T) {
 		t.Fatalf("unexpected event: %+v", ev)
 	}
 }
+
+func TestProcedureWithDetail(t *testing.T) {
+	var got Event
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	Configure(srv.URL)
+	defer Configure("")
+
+	ProcedureWithDetail(seqdiag.NodeUE, seqdiag.NodeGNB,
+		"RRC Setup Request", "Initial RRC connection", "TS 38.331", nil)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		ok := got.Type == "RRC Setup Request" && got.Detail == "Initial RRC connection"
+		mu.Unlock()
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("event not received: %+v", got)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

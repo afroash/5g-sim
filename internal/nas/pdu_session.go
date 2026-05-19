@@ -9,6 +9,7 @@
 package nas
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 )
@@ -46,7 +47,12 @@ type PDUSessionEstablishmentAccept struct {
 	AllocatedIP        string // The IP address given to the UE
 	SNssai             *SNSSAI
 	DNN                string
+	// DownlinkTEID is a simulator extension (gNB DL F-TEID for GTP-U toward UE).
+	DownlinkTEID uint32
 }
+
+// IEIUserPlaneDLTEID is a private IE carrying the gNB downlink GTP-U TEID.
+const IEIUserPlaneDLTEID = 0x78
 
 // PDU Session type values.
 // Ref: TS 24.501 §9.11.4.11
@@ -162,6 +168,17 @@ func BuildPDUSessionEstablishmentAccept(pduSessionID uint8, allocatedIP string, 
 	}
 
 	return msg
+}
+
+// AppendDownlinkTEID adds the simulator user-plane DL TEID IE to an encoded accept PDU.
+func AppendDownlinkTEID(msg []byte, dlTEID uint32) []byte {
+	if dlTEID == 0 {
+		return msg
+	}
+	teid := make([]byte, 4)
+	binary.BigEndian.PutUint32(teid, dlTEID)
+	out := append(msg, IEIUserPlaneDLTEID, byte(len(teid)))
+	return append(out, teid...)
 }
 
 // BuildPDUSessionEstablishmentReject encodes a PDU Session Establishment Reject.
