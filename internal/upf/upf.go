@@ -54,16 +54,21 @@ type Config struct {
 
 	// Hub is the optional observability hub for packet capture.
 	Hub *obs.Hub `yaml:"-"`
+
+	// DataPlaneMode selects N6 behaviour: "auto" (try TUN, then virtual), "fabric"
+	// (require kernel N6), "standalone" (no kernel N6 — in-process DN simulation for demos).
+	DataPlaneMode string `yaml:"data_plane_mode"`
 }
 
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		GTPPort:     gtp.GTPUPort,
-		BindAddr:    "0.0.0.0",
-		PFCPSimPort: 8002,
-		N6Iface:     "upf-n6",
-		N6CIDR:      "10.45.0.254/24",
+		GTPPort:         gtp.GTPUPort,
+		BindAddr:        "0.0.0.0",
+		PFCPSimPort:     8002,
+		N6Iface:         "upf-n6",
+		N6CIDR:          "10.45.0.254/24",
+		DataPlaneMode:   DataPlaneModeAuto,
 	}
 }
 
@@ -71,8 +76,9 @@ func DefaultConfig() Config {
 type UPF struct {
 	config Config
 	tunnel *gtp.Tunnel
-	n6     *N6 // nil if N6 forwarding is disabled
-	mu     sync.Mutex
+	n6        *N6 // nil if kernel N6 TUN is active
+	virtualN6 bool
+	mu        sync.Mutex
 
 	// sessions maps UL TEID → UPF session context (for the GTP-U handler).
 	sessions map[uint32]*UPFSession
@@ -169,23 +175,31 @@ func (u *UPF) handleUplinkPacket(sess *UPFSession, src *net.UDPAddr, pkt []byte)
 	fmt.Printf("[UPF] ▲ Uplink: %s → %s (%s) %d bytes via TEID=0x%08X\n",
 		srcIP, dstIP, protoName, len(pkt), sess.TEID)
 
+	emitUPFUplinkObs(sess, pkt)
+
 	// Production path: hand the packet to the kernel via the N6 TUN.
 	// The kernel's normal forwarding rules take it from there.
 	if u.n6 != nil {
 		if err := u.n6.Inject(pkt); err != nil {
 			fmt.Printf("[UPF] N6 inject error: %v\n", err)
+		} else {
+			emitUPFInjectObs(pkt)
 		}
 		return
 	}
 
-	// Fallback for unit tests: simulate an ICMP echo reply.
-	// Ref: RFC 792 — ICMP
+	// Virtual N6 / standalone: simulate internet-sim ICMP echo reply in-process.
 	if protocol == 0x01 && len(pkt) >= 28 {
 		icmpType := pkt[20]
 		if icmpType == 0x08 { // Echo Request
-			fmt.Printf("[UPF] (no N6) simulating ICMP echo reply to %s\n", srcIP)
+			label := "virtual N6"
+			if !u.virtualN6 {
+				label = "no N6"
+			}
+			fmt.Printf("[UPF] (%s) ICMP echo reply to %s\n", label, srcIP)
 			reply := buildICMPEchoReply(pkt)
 			if reply != nil && sess.GNBAddr != nil {
+				emitUPFDownlinkObs(sess, reply)
 				if err := u.tunnel.SendGPDU(sess.GNBAddr, sess.GNTEID, reply); err != nil {
 					fmt.Printf("[UPF] Failed to send downlink: %v\n", err)
 				} else {
@@ -232,6 +246,7 @@ func (u *UPF) handleN6Packet(pkt []byte) {
 	}
 	fmt.Printf("[UPF] ▼ Downlink: %s → %s (%d bytes) via DL-TEID=0x%08X\n",
 		srcIP, dstIP, len(pkt), sess.GNTEID)
+	emitUPFDownlinkObs(sess, pkt)
 }
 
 // Tunnel returns the UPF's GTP-U tunnel (for tests and TEID allocation).
@@ -242,19 +257,25 @@ func (u *UPF) Tunnel() *gtp.Tunnel {
 // Start begins serving GTP-U packets and (if configured) the N6 read loop.
 // Blocks until Close() is called.
 func (u *UPF) Start() {
-	// Best-effort N6 setup. Failures are non-fatal so unit tests without
-	// NET_ADMIN still run — the legacy fake-reply path takes over.
-	if u.config.N6Iface != "" {
+	mode := u.config.effectiveDataPlaneMode()
+	tryN6 := u.config.N6Iface != "" && mode != DataPlaneModeStandalone
+
+	if tryN6 {
 		n6, err := StartN6(u.config.N6Iface, u.config.N6CIDR)
 		if err != nil {
-			fmt.Printf("[UPF] N6 disabled: %v\n", err)
-			// note: when the upf is running standalone, this will not be able to setup the N6 interface, this is ok, we will use the fake-reply path.	
-			// TODO: we need to handle this case, similar to the ue. we want to be able to visually see requests going to and from upf towards the data network over the N6. 
-			// as it would happen over a real network. 
+			fmt.Printf("[UPF] kernel N6 unavailable: %v\n", err)
+			if mode == DataPlaneModeFabric {
+				fmt.Printf("[UPF] WARNING: fabric mode expects N6 TUN — user plane to internet-sim may fail\n")
+			}
+			u.virtualN6 = true
 		} else {
 			u.n6 = n6
 			go n6.ReadLoop(u.handleN6Packet)
+			fmt.Printf("[UPF] N6 data plane: kernel TUN %s\n", u.config.N6Iface)
 		}
+	} else {
+		u.virtualN6 = true
+		fmt.Printf("[UPF] N6 data plane: simulated (mode=%s)\n", mode)
 	}
 
 	fmt.Printf("[UPF] Starting — GTP-U on port %d\n", u.config.GTPPort)

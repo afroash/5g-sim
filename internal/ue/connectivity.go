@@ -1,46 +1,79 @@
-// connectivity.go — Startup connectivity test for the standalone UE.
-//
-// After the TUN interface is up, verifies the full data path:
-//
-//	UE TUN → GTP-U → gNB → UPF → internet-sim
-//
-// Ref: RFC 792 (ICMP), RFC 7230 (HTTP/1.1)
+// connectivity.go — Post-attach connectivity verification.
 package ue
 
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os/exec"
 	"strings"
 	"time"
+
 )
 
 const (
-	internetSimAddr = "10.100.0.1"
-	pingCount       = 4
-	httpTimeout     = 5 * time.Second
+	pingCount   = 4
+	httpTimeout = 5 * time.Second
 )
 
-// runConnectivityTest executes an ICMP ping and HTTP GET to internet-sim,
-// then prints a PASS/FAIL summary.
 func (u *UE) runConnectivityTest() {
+	target := u.config.ConnectivityTarget()
 	fmt.Println("[UE] ─── Connectivity Test ───────────────────────")
 
-	pingOK := pingTest(internetSimAddr, pingCount)
-	httpOK := httpTest(fmt.Sprintf("http://%s/", internetSimAddr))
+	var pingOK, httpOK bool
+	if u.userPlaneVirtual {
+		pingOK = u.runSyntheticPing(target)
+		fmt.Printf("[UE]   userspace data plane — HTTP skipped (use fabric/clab for full N6)\n")
+		httpOK = true
+	} else {
+		pingOK = pingTest(target, pingCount)
+		httpOK = httpTest(fmt.Sprintf("http://%s/", target))
+	}
 
 	fmt.Println("[UE] ─────────────────────────────────────────────")
 	if pingOK && httpOK {
-		fmt.Println("[UE] ✓ PASS — user plane fully operational")
+		fmt.Println("[UE] ✓ PASS — user plane path exercised")
 	} else {
 		fmt.Println("[UE] ✗ FAIL — one or more connectivity checks failed")
 	}
 }
 
-// pingTest sends count ICMP echo requests to dst via the system ping binary.
-// Traffic flows through ue0 and the GTP-U tunnel.
-// Returns true if at least one reply was received.
+func (u *UE) runSyntheticPing(dst string) bool {
+	fmt.Printf("[UE] synthetic ping %s (via GTP-U)...\n", dst)
+	u.icmpReplyCh = make(chan struct{}, 1)
+
+	pkt, err := buildICMPEchoRequest(u.allocatedIP, dst, 1, 1)
+	if err != nil {
+		fmt.Printf("[UE]   synthetic ping FAIL: %v\n", err)
+		return false
+	}
+
+	gnbGTPAddr, err := net.ResolveUDPAddr("udp4", u.config.GNBGTPAddress)
+	if err != nil {
+		fmt.Printf("[UE]   synthetic ping FAIL: %v\n", err)
+		return false
+	}
+	ulTEID := u.uplinkTEID
+	if ulTEID == 0 {
+		ulTEID = 1
+	}
+	emitUEUplinkObs(u.allocatedIP, u.config.SUPI, ulTEID, pkt)
+	if err := u.tunnel.SendGPDU(gnbGTPAddr, ulTEID, pkt); err != nil {
+		fmt.Printf("[UE]   synthetic ping FAIL: %v\n", err)
+		return false
+	}
+
+	select {
+	case <-u.icmpReplyCh:
+		fmt.Printf("[UE]   synthetic ping PASS ✓ (ICMP echo reply via 5G user plane)\n")
+		return true
+	case <-time.After(8 * time.Second):
+		fmt.Printf("[UE]   synthetic ping FAIL: timeout (UPF may be down or N6 not replying)\n")
+		return false
+	}
+}
+
 func pingTest(dst string, count int) bool {
 	fmt.Printf("[UE] ping %s (%d packets)...\n", dst, count)
 	cmd := exec.Command("ping", "-c", fmt.Sprintf("%d", count), "-W", "2", dst)
@@ -58,8 +91,6 @@ func pingTest(dst string, count int) bool {
 	return true
 }
 
-// httpTest makes a GET request to url and logs the status code and body preview.
-// Returns true if the response status is 2xx.
 func httpTest(url string) bool {
 	fmt.Printf("[UE] GET %s...\n", url)
 	client := &http.Client{Timeout: httpTimeout}

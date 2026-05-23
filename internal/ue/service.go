@@ -280,9 +280,9 @@ func (u *UE) handlePDUSessionAccept(smPayload []byte) error {
 	// while in clab this is a "real" int with a ip that is routable, if we are just running the ue as a standalone, 
 	// this is a TUN interface will not come up.
 	// TODO: we need to handle this case, and either use a "real" interface or a TUN interface.
-	if err := u.setupTUN(ip); err != nil {
-		fmt.Printf("[UE] TUN setup failed: %v\n", err)
-		// Non-fatal — manual testing still possible via ping from host
+	if err := u.setupDataPlane(ip); err != nil {
+		fmt.Printf("[UE] Data plane setup failed: %v\n", err)
+		return err
 	}
 	u.setState(StatePDUActive)
 	if u.onPDUActive != nil {

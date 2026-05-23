@@ -90,7 +90,8 @@ echo "[ue] Starting UE binary — logging to /var/log/ue.log"
 echo "[ue] ========================================="
 echo ""
 
-/usr/local/bin/ue -config /etc/5g-sim/ue.yaml >/var/log/ue.log 2>&1 &
+# -instance: single UE attach (supervisor mode is for host-side multi-UE only).
+/usr/local/bin/ue -instance -config /etc/5g-sim/ue.yaml >/var/log/ue.log 2>&1 &
 UE_PID=$!
 
 # Give the UE time to register then print the log so far.

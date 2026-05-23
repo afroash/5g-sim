@@ -23,6 +23,10 @@ type UE struct {
 
 	onStateChange func(InstanceState)
 	onPDUActive   func(ip string, dlTEID uint32)
+
+	virtualTun       *virtualTUN
+	userPlaneVirtual bool
+	icmpReplyCh      chan struct{}
 }
 
 // New creates a new UE instance ready to connect to the gNB.
@@ -62,6 +66,10 @@ func (u *UE) Close() {
 	if u.tunnel != nil {
 		_ = u.tunnel.Close()
 		u.tunnel = nil
+	}
+	if u.virtualTun != nil {
+		u.virtualTun.close()
+		u.virtualTun = nil
 	}
 }
 

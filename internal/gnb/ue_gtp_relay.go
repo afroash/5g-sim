@@ -29,6 +29,8 @@ import (
 	"net"
 
 	"github.com/afroash/5g-sim/internal/gtp"
+	"github.com/afroash/5g-sim/pkg/obspub"
+	"github.com/afroash/5g-sim/pkg/seqdiag"
 )
 
 // startUEGTPRelay binds the UE-facing GTP-U socket and starts its read loop.
@@ -109,6 +111,7 @@ func (g *GNB) handleUplinkFromUE(teid uint32, src *net.UDPAddr, innerPkt []byte)
 	dstIP := net.IP(innerPkt[16:20])
 	fmt.Printf("[gNB] ▲ Uplink relayed: %s → %s (%d bytes) UL-TEID=0x%08X\n",
 		srcIP, dstIP, len(innerPkt), session.ULTEID)
+	g.emitGTPPacket(seqdiag.NodeUE, seqdiag.NodeUPF, innerPkt, session.ULTEID)
 }
 
 // plausibleUEIPv4 returns true iff pkt looks like an IPv4 G-PDU that
@@ -203,6 +206,20 @@ func (g *GNB) relayDownlinkToUE(session *UETunnelSession, innerPkt []byte) {
 	}
 	fmt.Printf("[gNB] ▼ Downlink relayed to UE %s via DL-TEID=0x%08X (%d bytes)\n",
 		session.UEIP, session.DLTEID, len(innerPkt))
+	g.emitGTPPacket(seqdiag.NodeUPF, seqdiag.NodeUE, innerPkt, session.DLTEID)
+}
+
+func (g *GNB) emitGTPPacket(from, to seqdiag.Node, pkt []byte, teid uint32) {
+	if len(pkt) < 20 {
+		return
+	}
+	src := net.IP(pkt[12:16])
+	dst := net.IP(pkt[16:20])
+	summary := fmt.Sprintf("%s → %s (%d bytes)", src, dst, len(pkt))
+	obspub.EmitPacket(from, to, "gtp", summary, "TS 29.281 §5.1", map[string]string{
+		"teid": fmt.Sprintf("0x%08X", teid),
+		"len":  fmt.Sprintf("%d", len(pkt)),
+	})
 }
 
 // registerUESession adds a session to the relay's lookup map.

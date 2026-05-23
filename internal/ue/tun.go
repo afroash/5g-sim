@@ -1,10 +1,4 @@
-// tun.go — TUN interface setup and GTP-U user plane for the standalone UE.
-//
-// After PDU session establishment, creates a TUN interface, assigns the UE IP,
-// installs a default route, and starts the GTP-U send/receive goroutines so
-// that all traffic from the UE container flows through the 5G data path.
-//
-// Requires NET_ADMIN capability in the container.
+// tun.go — TUN / userspace data plane and GTP-U user plane for the UE.
 //
 // Ref: TS 23.501 §5.8.2 — User plane architecture
 // Ref: TS 29.281 — GTP-U
@@ -16,16 +10,38 @@ import (
 	"net"
 	"os/exec"
 
-	"github.com/songgao/water"
-
 	"github.com/afroash/5g-sim/internal/gtp"
+	"github.com/songgao/water"
 )
 
-// setupTUN creates a TUN interface named "ue0", assigns the UE IP (/24 prefix),
-// installs a default route via the interface, and starts GTP-U goroutines.
-// allocatedIP is dotted-decimal, e.g. "10.45.0.2".
-// Ref: Linux TUN/TAP driver
-func (u *UE) setupTUN(allocatedIP string) error {
+type packetIO interface {
+	Read([]byte) (int, error)
+	Write([]byte) (int, error)
+}
+
+// setupDataPlane brings up kernel TUN or userspace I/O plus GTP-U toward the gNB.
+func (u *UE) setupDataPlane(allocatedIP string) error {
+	mode := u.config.EffectiveDataPlaneMode()
+	switch mode {
+	case DataPlaneModeStandalone:
+		return u.setupVirtualUserPlane(allocatedIP)
+	case DataPlaneModeFabric:
+		if err := u.setupKernelTUN(allocatedIP); err != nil {
+			return err
+		}
+		u.userPlaneVirtual = false
+		return nil
+	default:
+		if err := u.setupKernelTUN(allocatedIP); err != nil {
+			fmt.Printf("[UE] kernel TUN unavailable (%v) — using userspace data plane\n", err)
+			return u.setupVirtualUserPlane(allocatedIP)
+		}
+		u.userPlaneVirtual = false
+		return nil
+	}
+}
+
+func (u *UE) setupKernelTUN(allocatedIP string) error {
 	tunName := u.config.TunName
 	if tunName == "" {
 		tunName = "ue0"
@@ -43,25 +59,26 @@ func (u *UE) setupTUN(allocatedIP string) error {
 	if err := run("ip", "link", "set", iface.Name(), "up"); err != nil {
 		return fmt.Errorf("ue: bring up %s: %w", iface.Name(), err)
 	}
-
-	// Disable IPv6 on the TUN to stop the kernel auto-generating Router
-	// Solicitations / DAD Neighbor Solicitations / Multicast Listener
-	// Reports as soon as the link comes up. Those would otherwise be read
-	// straight back out of the TUN and tunnelled toward the gNB, which
-	// only forwards IPv4 in this simulator.
 	if err := run("sysctl", "-w", "net.ipv6.conf."+iface.Name()+".disable_ipv6=1"); err != nil {
 		fmt.Printf("[UE] IPv6 disable warning: %v\n", err)
 	}
-
 	if err := run("ip", "route", "add", "default", "dev", iface.Name()); err != nil {
-		// Non-fatal — route may already exist or overlap with existing routes.
 		fmt.Printf("[UE] Default route warning: %v\n", err)
 	}
 
 	fmt.Printf("[UE] TUN interface %s up — IP %s/24\n", iface.Name(), allocatedIP)
+	return u.startGTPUserPlane(iface)
+}
 
-	// Create the GTP-U socket for user plane traffic.
-	// Port 0 = OS-assigned; the gNB learns our address from the first uplink packet.
+func (u *UE) setupVirtualUserPlane(allocatedIP string) error {
+	u.virtualTun = newVirtualTUN()
+	u.userPlaneVirtual = true
+	fmt.Printf("[UE] Userspace data plane active — IP %s (no kernel TUN)\n", allocatedIP)
+	return u.startGTPUserPlane(u.virtualTun)
+}
+
+func (u *UE) startGTPUserPlane(io packetIO) error {
+	u.icmpReplyCh = make(chan struct{}, 1)
 	tunnel, err := gtp.NewTunnel(0)
 	if err != nil {
 		return fmt.Errorf("ue: GTP-U tunnel: %w", err)
@@ -72,36 +89,28 @@ func (u *UE) setupTUN(allocatedIP string) error {
 	if dlTEID == 0 {
 		dlTEID = 1
 	}
-	// Register handler for downlink GTP-U packets (TEID from gNB via NAS accept).
-	// Ref: TS 29.281 §5.1
+
 	tunnel.RegisterTEID(dlTEID, func(_ uint32, _ *net.UDPAddr, innerPkt []byte) {
-		if _, err := iface.Write(innerPkt); err != nil {
-			fmt.Printf("[UE] TUN write error: %v\n", err)
+		emitUEDownlinkObs(u.config.SUPI, dlTEID, innerPkt)
+		dst := net.ParseIP(u.allocatedIP).To4()
+		if isICMPEchoReply(innerPkt, dst) {
+			select {
+			case u.icmpReplyCh <- struct{}{}:
+			default:
+			}
+		}
+		if !u.userPlaneVirtual {
+			if _, err := io.Write(innerPkt); err != nil {
+				fmt.Printf("[UE] TUN write error: %v\n", err)
+			}
 		}
 	})
 	go tunnel.Serve()
-
-	// Start uplink goroutine: reads from TUN, GTP-U encapsulates, sends to gNB.
-	go u.tunUplinkLoop(iface)
-
+	go u.packetUplinkLoop(io)
 	return nil
 }
 
-// tunUplinkLoop reads IP packets from the TUN interface and GTP-U encapsulates
-// them for transmission to the gNB's UE-facing GTP port.
-//
-// Only IPv4 packets sourced from the UE's allocated IP are forwarded. This
-// suppresses two classes of leakage that would otherwise corrupt the gNB's
-// session bookkeeping:
-//
-//   - Kernel-generated IPv6 traffic on the TUN (RS, DAD NS, MLR).
-//   - IPv4 packets the kernel happens to emit on the default route with a
-//     source IP other than the UE IP (e.g. background container chatter
-//     using eth0's mgmt address).
-//
-// Uplink TEID = 1 (PDU session 1); the gNB maps this to the UPF UL TEID.
-// Ref: TS 29.281 §5.1 — G-PDU
-func (u *UE) tunUplinkLoop(iface *water.Interface) {
+func (u *UE) packetUplinkLoop(io packetIO) {
 	buf := make([]byte, 65535)
 	gnbGTPAddr, err := net.ResolveUDPAddr("udp4", u.config.GNBGTPAddress)
 	if err != nil {
@@ -109,15 +118,17 @@ func (u *UE) tunUplinkLoop(iface *water.Interface) {
 		return
 	}
 
+	u.mu.RLock()
 	ueIP := net.ParseIP(u.allocatedIP).To4()
+	u.mu.RUnlock()
 	if ueIP == nil {
 		fmt.Printf("[UE] Cannot parse allocated IP %q — uplink filter disabled\n", u.allocatedIP)
 	}
 
 	for {
-		n, err := iface.Read(buf)
+		n, err := io.Read(buf)
 		if err != nil {
-			fmt.Printf("[UE] TUN read error: %v\n", err)
+			fmt.Printf("[UE] packet read error: %v\n", err)
 			return
 		}
 		if !u.shouldForwardUplink(buf[:n], ueIP) {
@@ -130,24 +141,19 @@ func (u *UE) tunUplinkLoop(iface *water.Interface) {
 		if ulTEID == 0 {
 			ulTEID = 1
 		}
+		emitUEUplinkObs(u.allocatedIP, u.config.SUPI, ulTEID, pkt)
 		if err := u.tunnel.SendGPDU(gnbGTPAddr, ulTEID, pkt); err != nil {
 			fmt.Printf("[UE] GTP-U uplink error: %v\n", err)
 		}
 	}
 }
 
-// shouldForwardUplink returns true iff pkt is an IPv4 packet whose source
-// address matches the UE's allocated IP. Anything else is dropped at the
-// TUN read loop so the gNB only ever sees clean UE-originated traffic.
-//
-// If ueIP is nil (parse failed during setup) the filter is bypassed and
-// any IPv4 packet is forwarded — better than dropping everything.
 func (u *UE) shouldForwardUplink(pkt []byte, ueIP net.IP) bool {
 	if len(pkt) < 20 {
 		return false
 	}
 	if pkt[0]>>4 != 4 {
-		return false // not IPv4
+		return false
 	}
 	if ueIP == nil {
 		return true
@@ -155,7 +161,11 @@ func (u *UE) shouldForwardUplink(pkt []byte, ueIP net.IP) bool {
 	return bytes.Equal(pkt[12:16], ueIP)
 }
 
-// run executes a shell command and returns an error if it fails.
+// setupTUN is kept as an alias for callers/tests.
+func (u *UE) setupTUN(allocatedIP string) error {
+	return u.setupDataPlane(allocatedIP)
+}
+
 func run(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {

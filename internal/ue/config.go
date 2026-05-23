@@ -51,6 +51,12 @@ type Config struct {
 
 	// UplinkTEID is the TEID used toward the gNB (default 1).
 	UplinkTEID uint32 `yaml:"uplink_teid"`
+
+	// DataPlaneMode: "auto" (default TUN, else userspace), "fabric" (TUN required), "standalone" (skip TUN).
+	DataPlaneMode string `yaml:"data_plane_mode"`
+
+	// ConnectivityTargetAddr is the ping/HTTP target (default 10.100.0.1 / internet-sim).
+	ConnectivityTargetAddr string `yaml:"connectivity_target_addr"`
 }
 
 // SliceConfig identifies a 5G network slice.
@@ -117,4 +123,12 @@ func LoadConfigOver(base Config, path string) (Config, error) {
 		return Config{}, fmt.Errorf("ue: parse config %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// ConnectivityTarget returns the address used for post-attach connectivity checks.
+func (c Config) ConnectivityTarget() string {
+	if strings.TrimSpace(c.ConnectivityTargetAddr) != "" {
+		return strings.TrimSpace(c.ConnectivityTargetAddr)
+	}
+	return "10.100.0.1"
 }

@@ -154,7 +154,7 @@ function PulseAnim({ pulse }) {
   );
 }
 
-function MessageLog({ messages, onSelectId, selectedId }) {
+function MessageLog({ messages, onSelectId, selectedId, filter, onFilterChange }) {
   const endRef = useRef(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -164,7 +164,32 @@ function MessageLog({ messages, onSelectId, selectedId }) {
       <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.green, display: "inline-block" }} />
         <span style={{ color: C.muted, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" }}>Message Log</span>
-        <span style={{ marginLeft: "auto", color: C.dim, fontSize: 10 }}>{messages.length} events</span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          {[
+            ["all", "All"],
+            ["procedures", "Procedures"],
+            ["packets", "Packets"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onFilterChange(id)}
+              style={{
+                padding: "2px 8px",
+                fontSize: 9,
+                borderRadius: 4,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                border: `1px solid ${filter === id ? C.accent : C.border}`,
+                background: filter === id ? C.accentDim : "transparent",
+                color: filter === id ? C.accent : C.muted,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span style={{ color: C.dim, fontSize: 10, width: "100%" }}>{messages.length} events</span>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
         {messages.map((m, i) => (
@@ -422,6 +447,13 @@ export default function App() {
   const [err, setErr] = useState(null);
 
   const [spawnProfile, setSpawnProfile] = useState("local");
+  const [msgFilter, setMsgFilter] = useState("all");
+
+  const filteredMessages = useMemo(() => {
+    if (msgFilter === "packets") return messages.filter((m) => m.kind === "packet");
+    if (msgFilter === "procedures") return messages.filter((m) => m.kind !== "packet");
+    return messages;
+  }, [messages, msgFilter]);
 
   const handleAddUE = useCallback(async () => {
     try {
@@ -531,7 +563,9 @@ export default function App() {
         </div>
         <div style={{ borderRight: `1px solid ${C.border}`, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <MessageLog
-            messages={messages}
+            messages={filteredMessages}
+            filter={msgFilter}
+            onFilterChange={setMsgFilter}
             onSelectId={(id) => {
               setSelectedMsgId(id);
               if (id) setSelectedNF(null);
