@@ -6,4 +6,5 @@ set_id: 1
 pointer: 0
 sctp_port: 38412
 smf_address: "http://10.1.0.1:8081"
+udm_address: "http://10.1.0.1:8004"
 http_port: 8090

@@ -1,0 +1,5 @@
+bind_address: "10.1.0.1"
+port: 8004
+nrf_address: "http://10.1.0.1:8080"
+instance_id: "udm-sim-001"
+subscribers_path: "/etc/5g-sim/subscribers.yaml"

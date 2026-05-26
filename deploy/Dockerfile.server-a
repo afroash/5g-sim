@@ -17,6 +17,7 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/nrf ./cmd/nrf
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/udm ./cmd/udm
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/amf ./cmd/amf
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/smf ./cmd/smf
 
@@ -45,14 +46,17 @@ RUN chown frr:frr /etc/frr/frr.conf
 
 # NF binaries
 COPY --from=builder /out/nrf /usr/local/bin/nrf
+COPY --from=builder /out/udm /usr/local/bin/udm
 COPY --from=builder /out/amf /usr/local/bin/amf
 COPY --from=builder /out/smf /usr/local/bin/smf
 
 # NF config files
 RUN mkdir -p /etc/5g-sim
 COPY deploy/configs/nfs/nrf.yaml /etc/5g-sim/nrf.yaml
+COPY deploy/configs/nfs/udm.yaml /etc/5g-sim/udm.yaml
 COPY deploy/configs/nfs/amf.yaml /etc/5g-sim/amf.yaml
 COPY deploy/configs/nfs/smf.yaml /etc/5g-sim/smf.yaml
+COPY configs/subscribers.yaml /etc/5g-sim/subscribers.yaml
 
 # Entrypoint
 COPY deploy/servers/entrypoint-server-a.sh /entrypoint.sh

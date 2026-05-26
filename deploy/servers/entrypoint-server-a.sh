@@ -125,6 +125,10 @@ echo "[server-a] Starting NRF..."
 /usr/local/bin/nrf -config /etc/5g-sim/nrf.yaml >/var/log/nrf.log 2>&1 &
 wait_http http://10.1.0.1:8080/health
 
+echo "[server-a] Starting UDM..."
+/usr/local/bin/udm -config /etc/5g-sim/udm.yaml >/var/log/udm.log 2>&1 &
+wait_http http://10.1.0.1:8004/health
+
 echo "[server-a] Starting AMF..."
 /usr/local/bin/amf -config /etc/5g-sim/amf.yaml >/var/log/amf.log 2>&1 &
 wait_http http://10.1.0.1:8090/health
@@ -135,8 +139,8 @@ wait_http http://10.1.0.1:8081/health
 
 echo ""
 echo "[server-a] ========================================="
-echo "[server-a] Phase 2 complete — NRF, AMF, SMF running"
+echo "[server-a] Phase 2 complete — NRF, UDM, AMF, SMF running"
 echo "[server-a] ========================================="
 echo ""
 
-tail -f /var/log/nrf.log /var/log/amf.log /var/log/smf.log 2>/dev/null || tail -f /dev/null
+tail -f /var/log/nrf.log /var/log/udm.log /var/log/amf.log /var/log/smf.log 2>/dev/null || tail -f /dev/null

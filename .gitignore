@@ -1,4 +1,5 @@
 deploy/clab-5g-sim/*
+.local-stack/
 deploy/PHASE1-VERIFY.md
 web/observatory/node_modules/
 docs/*

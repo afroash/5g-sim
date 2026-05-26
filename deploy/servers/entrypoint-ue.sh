@@ -45,8 +45,10 @@ ip addr add 10.0.2.18/30 dev eth1 2>/dev/null \
 # 3. Static route — UE has no OSPF; reach gNB at 10.1.1.1
 #    via leaf1 (10.0.2.17), now that 10.0.2.16/30 is on eth1.
 # ------------------------------------------------------------
-echo "[ue] Adding static route via leaf1 (10.0.2.17)..."
+echo "[ue] Adding static routes via leaf1 (10.0.2.17)..."
 ip route delete default 2>/dev/null || true
+# gNB (N2/N3) and control-plane loopback (UDM pre-check before SCTP attach).
+ip route replace 10.1.0.1/32 via 10.0.2.17 dev eth1
 ip route replace 10.1.1.1/32 via 10.0.2.17 dev eth1
 
 

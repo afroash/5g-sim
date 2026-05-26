@@ -2,6 +2,9 @@ supi: "imsi-001010000000001"
 gnb_address: "10.1.1.1"
 gnb_sctp_port: 38413
 gnb_gtp_address: "10.1.1.1:2153"
+udm_address: "http://10.1.0.1:8004"
+data_plane_mode: fabric
+connectivity_target_addr: "10.100.0.1"
 dnn: "internet"
 slice:
   sst: 1

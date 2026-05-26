@@ -9,3 +9,4 @@ n6_iface: "upf-n6"
 # Sit at the top of the UE pool — the SMF allocates from .1 upward, so
 # anything other than the high end risks colliding with a UE address.
 n6_cidr: "10.45.0.254/24"
+data_plane_mode: fabric

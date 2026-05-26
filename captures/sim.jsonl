@@ -1,24 +1,13 @@
-{"ts":"2026-05-19T22:05:04.461265983+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: NGSetupRequest","specRef":"TS 38.413 §9.2.6.1"}
-{"ts":"2026-05-19T22:05:04.461635627+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: NGSetupResponse","specRef":"TS 38.413 §9.2.6.2"}
-{"ts":"2026-05-19T22:05:13.558559245+01:00","component":"AMF","level":"INFO ","msg":"→ UDM: Nudm_UECM_Registration","specRef":"TS 29.503 §5.3.2","fields":{"supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:05:13.559358262+01:00","component":"UDM","level":"INFO ","msg":"→ AMF: 204 No Content","specRef":"TS 29.503","fields":{"supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:05:13.559460068+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: N2: Initial Context Setup","specRef":"TS 38.413 §9.2.1.1","fields":{"supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:05:13.560473251+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: N2: Registration Complete","specRef":"TS 38.413 §9.2.5.3"}
-{"ts":"2026-05-19T22:05:13.76460893+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: UplinkNASTransport (PDU Session Estab Request)","specRef":"TS 38.413 §9.2.5.3"}
-{"ts":"2026-05-19T22:05:13.764669619+01:00","component":"AMF","level":"INFO ","msg":"→ SMF: Nsmf_PDUSession_CreateSMContext","specRef":"TS 29.502 §5.2.2.2","fields":{"dnn":"internet","supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:05:13.766862174+01:00","component":"SMF","level":"INFO ","msg":"→ AMF: 201 Created (IP allocated)","specRef":"TS 29.502 §6.1.6.3.2","fields":{"ip":"10.0.0.1"}}
-{"ts":"2026-05-19T22:05:13.766915052+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: PDUSessionResourceSetupRequest","specRef":"TS 38.413 §9.2.1.1","fields":{"ul_teid":"0x00000001","upf":"127.0.0.1:2152"}}
-{"ts":"2026-05-19T22:05:13.767451679+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: PDUSessionResourceSetupResponse","specRef":"TS 38.413 §9.2.1.2","fields":{"dl_teid":"0x00000001"}}
-{"ts":"2026-05-19T22:05:13.767496051+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: DownlinkNASTransport (PDU Session Estab Accept)","specRef":"TS 38.413 §9.2.5.2","fields":{"ip":"10.0.0.1","supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:05:13.767550304+01:00","component":"AMF","level":"INFO ","msg":"→ UE: NAS: PDU Session Accept","specRef":"TS 24.501 §8.3.2","fields":{"ip":"10.0.0.1","supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:07:36.238471197+01:00","component":"AMF","level":"INFO ","msg":"→ UDM: Nudm_UECM_Registration","specRef":"TS 29.503 §5.3.2","fields":{"supi":"imsi-001010000000002"}}
-{"ts":"2026-05-19T22:07:36.238999635+01:00","component":"UDM","level":"INFO ","msg":"→ AMF: 204 No Content","specRef":"TS 29.503","fields":{"supi":"imsi-001010000000002"}}
-{"ts":"2026-05-19T22:07:36.239094706+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: N2: Initial Context Setup","specRef":"TS 38.413 §9.2.1.1","fields":{"supi":"imsi-001010000000002"}}
-{"ts":"2026-05-19T22:07:36.239986267+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: N2: Registration Complete","specRef":"TS 38.413 §9.2.5.3"}
-{"ts":"2026-05-19T22:07:36.440901342+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: UplinkNASTransport (PDU Session Estab Request)","specRef":"TS 38.413 §9.2.5.3"}
-{"ts":"2026-05-19T22:07:36.44096426+01:00","component":"AMF","level":"INFO ","msg":"→ SMF: Nsmf_PDUSession_CreateSMContext","specRef":"TS 29.502 §5.2.2.2","fields":{"dnn":"internet","supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:07:36.442697011+01:00","component":"SMF","level":"INFO ","msg":"→ AMF: 201 Created (IP allocated)","specRef":"TS 29.502 §6.1.6.3.2","fields":{"ip":"10.0.0.2"}}
-{"ts":"2026-05-19T22:07:36.442768117+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: PDUSessionResourceSetupRequest","specRef":"TS 38.413 §9.2.1.1","fields":{"ul_teid":"0x00000002","upf":"127.0.0.1:2152"}}
-{"ts":"2026-05-19T22:07:36.444910501+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: PDUSessionResourceSetupResponse","specRef":"TS 38.413 §9.2.1.2","fields":{"dl_teid":"0x00000002"}}
-{"ts":"2026-05-19T22:07:36.445270677+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: DownlinkNASTransport (PDU Session Estab Accept)","specRef":"TS 38.413 §9.2.5.2","fields":{"ip":"10.0.0.2","supi":"imsi-001010000000001"}}
-{"ts":"2026-05-19T22:07:36.445348546+01:00","component":"AMF","level":"INFO ","msg":"→ UE: NAS: PDU Session Accept","specRef":"TS 24.501 §8.3.2","fields":{"ip":"10.0.0.2","supi":"imsi-001010000000001"}}
+{"ts":"2026-05-26T21:01:48.367888622+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: NGSetupRequest","specRef":"TS 38.413 §9.2.6.1"}
+{"ts":"2026-05-26T21:01:48.368205301+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: NGSetupResponse","specRef":"TS 38.413 §9.2.6.2"}
+{"ts":"2026-05-26T21:01:49.357152235+01:00","component":"AMF","level":"INFO ","msg":"→ UDM: Nudm_UECM_Registration","specRef":"TS 29.503 §5.3.2","fields":{"supi":"imsi-001010000000001"}}
+{"ts":"2026-05-26T21:01:49.357884417+01:00","component":"UDM","level":"INFO ","msg":"→ AMF: 204 No Content","specRef":"TS 29.503","fields":{"supi":"imsi-001010000000001"}}
+{"ts":"2026-05-26T21:01:49.357983013+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: N2: Initial Context Setup","specRef":"TS 38.413 §9.2.1.1","fields":{"supi":"imsi-001010000000001"}}
+{"ts":"2026-05-26T21:01:49.358641205+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: N2: Registration Complete","specRef":"TS 38.413 §9.2.5.3"}
+{"ts":"2026-05-26T21:01:49.560597393+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: UplinkNASTransport (PDU Session Estab Request)","specRef":"TS 38.413 §9.2.5.3"}
+{"ts":"2026-05-26T21:01:49.560645394+01:00","component":"AMF","level":"INFO ","msg":"→ SMF: Nsmf_PDUSession_CreateSMContext","specRef":"TS 29.502 §5.2.2.2","fields":{"dnn":"internet","supi":"imsi-001010000000001"}}
+{"ts":"2026-05-26T21:01:49.563146024+01:00","component":"SMF","level":"INFO ","msg":"→ AMF: 201 Created (IP allocated)","specRef":"TS 29.502 §6.1.6.3.2","fields":{"ip":"10.0.0.1"}}
+{"ts":"2026-05-26T21:01:49.563194136+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: PDUSessionResourceSetupRequest","specRef":"TS 38.413 §9.2.1.1","fields":{"ul_teid":"0x00000001","upf":"127.0.0.1:2152"}}
+{"ts":"2026-05-26T21:01:49.564068742+01:00","component":"gNB","level":"INFO ","msg":"→ AMF: PDUSessionResourceSetupResponse","specRef":"TS 38.413 §9.2.1.2","fields":{"dl_teid":"0x00000001"}}
+{"ts":"2026-05-26T21:01:49.564151671+01:00","component":"AMF","level":"INFO ","msg":"→ gNB: DownlinkNASTransport (PDU Session Estab Accept)","specRef":"TS 38.413 §9.2.5.2","fields":{"ip":"10.0.0.1","supi":"imsi-001010000000001"}}
+{"ts":"2026-05-26T21:01:49.564208497+01:00","component":"AMF","level":"INFO ","msg":"→ UE: NAS: PDU Session Accept","specRef":"TS 24.501 §8.3.2","fields":{"ip":"10.0.0.1","supi":"imsi-001010000000001"}}

@@ -28,7 +28,7 @@ deploy/
     ├── Dockerfile.server-a
     ├── Dockerfile.server-b
     ├── Dockerfile.ue
-    ├── entrypoint-server-a.sh  # NRF / AMF / SMF startup
+    ├── entrypoint-server-a.sh  # NRF / UDM / AMF / SMF startup
     ├── entrypoint-server-b.sh  # UPF / gNB startup + N6 OSPF hook
     └── entrypoint-ue.sh        # UE simulator startup
 ```
@@ -40,7 +40,10 @@ deploy/
 ./build.sh
 
 # 2. Deploy topology (topology file lives in this directory)
-sudo containerlab deploy -t 5g-sim.clab.yml
+containerlab deploy -t 5g-sim.clab.yml
+
+# After changing images or entrypoints, refresh the lab:
+containerlab deploy -t 5g-sim.clab.yml --reconfigure
 
 # 3. Verify fabric + HTTP target (PHASE1-VERIFY.md), then exercise UE
 ```
